@@ -955,6 +955,24 @@ When a shot image generation task succeeds:
 - The first implementation plan after M0.1 is `docs/superpowers/plans/2026-05-08-m1-platform-foundation.md`.
 - A task may not move to Done unless its acceptance criteria, tests, and observability requirements are verified.
 
+### D-052: P0 Delivery Work Is Split Across Three Capability Owners
+
+**Decision:** P0 implementation work is split into three developer-owned execution lanes: Platform/Reliability, Creator Domain, and Experience/QA/Ops. The canonical task plan is `docs/superpowers/plans/2026-05-08-p0-three-developer-delivery-plan.md`.
+
+**Rationale:**
+
+- The team has three developers, so the plan must make ownership, dependencies, and verification explicit enough for daily progress and weekly acceptance.
+- Splitting by code layer would hide cross-module risk. Splitting by capability keeps every task tied to a user-visible or reliability-visible behavior.
+- The minimum runnable loop must stay central: login -> create project -> parse script -> confirm assets -> calibrate shots -> generate image -> export.
+
+**Implications:**
+
+- Developer A owns platform trust: auth/session, actor context, tenant safety, audit, workflow/task, idempotency, provider safety, repair, credit, and payment gates.
+- Developer B owns creator domain behavior: project/script, parse workflow, assets, shots, calibration, image/video generation, and export manifest.
+- Developer C owns user-visible delivery and release evidence: web flow, E2E, regression, observability, runbooks, and release/rollback gates.
+- Every task must answer what/why, delivered capability, prerequisites, verification method, failure handling, and whether it advances the main loop.
+- P0-B commerce/payment remains gated by credit ledger reliability, official provider mapping, merchant capability, finance/tax approval, and operational runbooks.
+
 ## Open Questions
 
 These are not yet decided:
