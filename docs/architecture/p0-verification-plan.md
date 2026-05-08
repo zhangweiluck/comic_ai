@@ -44,6 +44,18 @@ These tests are now executable repository artifacts. They are contract-level tes
 | `apps/backend/src/modules/workflow-task/tests/redis-loss-repair.spec.ts` | `contracts` | Redis-loss repair selects queued tasks with missing/stale dispatch facts. |
 | `apps/backend/src/modules/credit-billing/tests/balance-drift-repair.spec.ts` | `contracts` | Credit balance read-model drift is detected from append-only ledger facts. |
 
+## 2.2 Idempotency Verification Mapping
+
+| Test ID | Stage | Proposed / Implemented Test File | Status | Must Prove |
+| --- | --- | --- | --- | --- |
+| IDEMP-001 | M0.1 | `apps/backend/src/modules/shared/idempotency/tests/idempotency-records.spec.ts` | Implemented | Same `(org, operation, key, hash)` returns existing record. |
+| IDEMP-002 | M0.1 | `apps/backend/src/modules/shared/idempotency/tests/idempotency-records.spec.ts` | Implemented | Same `(org, operation, key)` with different hash returns `idempotency_conflict`. |
+| IDEMP-003 | M2 | `apps/backend/src/modules/project/tests/parse-script.idempotency.spec.ts` | Proposed | Refresh/retry of script parse returns existing workflow. |
+| IDEMP-004 | M2 | `apps/backend/src/modules/shot/tests/generate-shot-image.idempotency.spec.ts` | Proposed | Running shot generation cannot create a duplicate task. |
+| IDEMP-005 | M5 | `apps/backend/src/modules/commerce-payment/tests/create-order.idempotency.spec.ts` | Proposed | Replayed order creation returns the same order snapshot. |
+| IDEMP-006 | M4 | `apps/backend/src/modules/workflow-task/tests/worker-duplicate-delivery.spec.ts` | Proposed | BullMQ duplicate delivery cannot create a second attempt for an already claimed task. |
+| IDEMP-007 | M4 | `apps/backend/src/modules/credit-billing/tests/allocation-settlement-idempotency.spec.ts` | Proposed | Duplicate settlement cannot both consume and release the same allocation. |
+
 ## 3. PRD Acceptance Tests
 
 | PRD ID | Stage | Test Type | Proposed Test File | Owning Modules | Must Prove |
@@ -102,7 +114,7 @@ The execution spec defines R-020 through R-029. These are required for M4/M6 har
 | ID | Stage | Test Type | Proposed Test File | Must Prove |
 | --- | --- | --- | --- | --- |
 | R-020 | M4 | Admin integration | `apps/backend/src/modules/admin-ops/tests/retry-failed-task.spec.ts` | Retry creates new attempt/task and preserves old attempt. |
-| R-021 | M4 | Event replay | `apps/backend/src/modules/shared/outbox/tests/duplicate-dispatch.spec.ts` | Duplicate dispatch is consumer-safe. |
+| R-021 | M4 | Event replay | `apps/backend/src/modules/shared/outbox/tests/inbox-dedup.spec.ts` | Duplicate dispatch is consumer-safe. |
 | R-022 | M4 | Reconciliation | `apps/backend/src/modules/credit-billing/tests/balance-drift-repair.spec.ts` | Balance cache drift is detected from ledger. |
 | R-023 | M4 | Provider recovery | `apps/backend/src/modules/model-gateway/tests/lookup-ttl-manual-review.spec.ts` | Lookup TTL moves unknown to manual review and keeps reservation held. |
 | R-024 | M2/M4 | Quality gate | `apps/backend/src/modules/quality-review/tests/calibration-quality-failure.spec.ts` | Failed calibration quality blocks pass until fixed/override. |
@@ -140,9 +152,9 @@ Allowed PR labels:
 
 ## 9. M0.1 Exit Criteria
 
-- [ ] Every PRD TC-P0 test has a proposed test file and owning modules.
-- [ ] Every P0-A architecture gate has a proposed test file.
-- [ ] Every P0-B reliability gate has a proposed test file.
-- [ ] CI gate names are defined.
-- [ ] Test IDs are required in P0 PR descriptions.
-- [ ] Payment tests remain gated until official provider/finance verification is complete.
+- [x] Every PRD TC-P0 test has a proposed test file and owning modules.
+- [x] Every P0-A architecture gate has a proposed test file.
+- [x] Every P0-B reliability gate has a proposed test file.
+- [x] CI gate names are defined.
+- [x] Test IDs are required in P0 PR descriptions.
+- [x] Payment tests remain gated until official provider/finance verification is complete.
