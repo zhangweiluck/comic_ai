@@ -955,6 +955,25 @@ When a shot image generation task succeeds:
 - The first implementation plan after M0.1 is `docs/superpowers/plans/2026-05-08-m1-platform-foundation.md`.
 - A task may not move to Done unless its acceptance criteria, tests, and observability requirements are verified.
 
+### D-052: Three-Person Delivery Split
+
+**Decision:** P0 delivery is split across three role-based lanes: Platform/Reliability Owner, Creator Domain Owner, and Experience/QA/Ops Owner.
+
+**Rationale:**
+
+- Three developers should not work as three isolated feature factories. They should share one minimum runnable loop and own different failure modes.
+- Platform/reliability work must precede tenant-owned creator features.
+- Creator domain work must go through Workflow/Task, idempotency, and immutable asset/version contracts.
+- Frontend/QA/Ops work must verify the real loop and cannot use fake state to claim progress.
+
+**Implications:**
+
+- `docs/architecture/p0-three-person-delivery-plan.md` is the execution split for daily board work.
+- Developer A owns platform foundation, reliability, idempotency, Workflow/Task safety, credit reliability, and payment gates.
+- Developer B owns Project/Script/Asset/Shot/Calibration/Export and the creator-loop backend.
+- Developer C owns Web integration, E2E acceptance, release/observability/runbooks, and demo readiness.
+- Every task must explicitly answer capability delivered, dependencies, verification, failure handling, and main-loop contribution before it can move to Done.
+
 ## Open Questions
 
 These are not yet decided:
