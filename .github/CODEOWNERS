@@ -1,0 +1,14 @@
+/packages/contracts/                         @contract-owner
+/packages/db/migrations/                     @data-owner @reliability-owner
+/apps/backend/src/modules/identity/          @identity-owner @security-owner
+/apps/backend/src/modules/organization/      @organization-owner @security-owner
+/apps/backend/src/modules/project/           @project-owner
+/apps/backend/src/modules/asset/             @asset-owner
+/apps/backend/src/modules/shot/              @shot-owner
+/apps/backend/src/modules/workflow-task/     @workflow-owner @reliability-owner
+/apps/backend/src/modules/model-gateway/     @model-gateway-owner @reliability-owner
+/apps/backend/src/modules/commerce-payment/  @payment-owner @security-owner
+/apps/backend/src/modules/credit-billing/    @credit-owner @reliability-owner
+/apps/backend/src/modules/admin-ops/         @ops-owner @security-owner
+/apps/backend/src/modules/storage/           @storage-owner @security-owner
+/docs/architecture/                          @architecture-owner @contract-owner
