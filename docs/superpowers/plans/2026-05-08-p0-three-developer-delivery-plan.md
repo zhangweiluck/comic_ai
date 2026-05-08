@@ -36,7 +36,7 @@
 
 | 人员 | 角色 | 主责 | 不负责 |
 | --- | --- | --- | --- |
-| 开发 A | Platform / Reliability Owner | M1 平台基础、DB/迁移、认证、租户、权限、幂等、Outbox/Inbox、Workflow/Task、Provider 安全、信用账本、支付可靠性 gate | 不绕过业务模块直接写 Project/Shot 业务规则；不做 UI 假闭环 |
+| 开发 A | Platform / Reliability Owner | M1 平台基础、DB/迁移、认证、租户、权限、幂等、Outbox/Inbox、Workflow/Task、Storage/Signed URL、Provider 安全、信用账本、支付可靠性 gate | 不绕过业务模块直接写 Project/Shot 业务规则；不做 UI 假闭环 |
 | 开发 B | Creator Domain Owner | Project、Script、Asset、Shot、Calibration、Export、Mock ModelGateway、P0-A 主链路后端 | 不实现支付；不直接调用 provider；不绕过 Workflow/Task 创建长任务 |
 | 开发 C | Experience / QA / Ops Owner | Web 工作台、API 联调、E2E、验收用例、错误码体验、日志/指标/发布/Runbook/Admin Lite | 不用假接口/假状态宣称闭环完成；不绕过后端权限和持久状态 |
 
@@ -53,7 +53,7 @@
 | B0 M0.1 | 合同和执行系统就绪 | 主责 | Review | Review | Contract tests 通过，三人计划可执行 |
 | B1 M1 | 真实登录、租户、权限、审计 | 主责 | 领域测试草稿 | Auth/UI/E2E 壳 | Auth/RBAC/tenant/audit tests 通过 |
 | B2 M2 Skeleton | Project + Script parse workflow + 状态查询 | Workflow/Task/idempotency | Project/Script/mock parse | Project create UI/E2E | 创建项目 -> 解析 workflow -> 刷新恢复 |
-| B3 M2 Closure | Asset/Shot/Calibration/Image/Export 闭环 | 支持 long task | 主责 | 工作台/E2E/验收 | P0-A mock provider E2E 通过 |
+| B3 M2 Closure | Asset/Shot/Calibration/Image/Export 闭环 | 支持 long task + Storage/Signed URL | 主责 | 工作台/E2E/验收 | P0-A mock provider E2E 通过 |
 | B4 M3 | Provider 副作用保护 | 主责 | 接入生成链路 | 故障测试 | A-001 no-blind-retry 通过 |
 | B5 M4 | Repair/Credit/Admin/Ops | 主责 | 业务状态协作 | Ops UI/runbook | Redis loss、lease、credit、manual review gates 通过 |
 | B6 M5 | Commerce/Payment gate | 主责 | 消费 credit 能力 | Admin/Ops 验收 | Payment callback/credit/refund/invoice gates 通过 |
@@ -69,12 +69,40 @@
 | DB foundation | `packages/db/migrations/0001_foundation.sql` | P0 foundation schema、约束、幂等、workflow/task、outbox/inbox | A |
 | Identity / Organization | `apps/backend/src/modules/identity/*`, `apps/backend/src/modules/organization/*` | 登录、session、actor context、租户权限 | A |
 | Shared reliability | `apps/backend/src/modules/shared/*`, `apps/backend/src/modules/workflow-task/*`, `apps/backend/src/modules/model-gateway/*` | 幂等、outbox/inbox、workflow/task、provider 副作用保护、repair | A |
+| Storage adapter | `apps/backend/src/modules/storage/*` | 对象存储 key、metadata、signed URL、导出包对象访问的唯一基础设施边界 | A |
 | Billing / Payment | `apps/backend/src/modules/credit-billing/*`, `apps/backend/src/modules/commerce-payment/*` | credit ledger、reservation、payment callback、refund/invoice gate | A |
 | Creator domain | `apps/backend/src/modules/project/*`, `apps/backend/src/modules/asset/*`, `apps/backend/src/modules/shot/*`, `apps/backend/src/modules/quality-review/*`, `apps/backend/src/modules/export/*` | Project、Script、Asset、Shot、Calibration、Generation、Export 的业务事实 | B |
 | Web experience | `apps/web/src/app/*`, `apps/web/src/features/*` | 真实 API 驱动的工作台、错误体验、状态恢复、用户闭环 | C |
 | E2E / Ops docs | `apps/web/e2e/p0/*`, `docs/architecture/runbooks/*`, `docs/architecture/release-checklist.md` | 主链路回归、故障定位、上线/回滚证据 | C |
 
-## 2.6 全局验证命令
+## 2.6 命令契约矩阵
+
+后端 handler、前端 client、E2E fixture 都必须引用同一份 command contract。任何新增或改名都先改 `packages/contracts/api/*` 并通过 contract tests，不能在 UI 或 controller 里私自发明接口。
+
+| 能力 | Contract | Operation name | Capability | Owner | 首个落地点 |
+| --- | --- | --- | --- | --- | --- |
+| 创建项目 | `packages/contracts/api/project.commands.ts#CreateProject` | `project.create` | `project:create` | B | B1 + C2 |
+| 解析剧本 | `packages/contracts/api/project.commands.ts#ParseScript` | `script.parse` | `project:edit` | B | B2 + C2/C3 |
+| 分镜拆分 | `packages/contracts/api/project.commands.ts#SplitShots` | `shots.split` | `project:edit` | B | B4/C5 |
+| 生成校准 | `packages/contracts/api/calibration.commands.ts#GenerateCalibration` | `calibration.generate` | `generation:start` | B | B6 + C5 |
+| 通过校准 | `packages/contracts/api/calibration.commands.ts#PassCalibration` | `calibration.pass` | `project:edit` | B | B6 + C5 |
+| 跳过校准 | `packages/contracts/api/calibration.commands.ts#SkipCalibration` | `calibration.skip` | `project:edit` | B | B6 + C5 |
+| 生成分镜图 | `packages/contracts/api/shot.commands.ts#GenerateShotImage` | `shot.image.generate` | `generation:start` | B | B7 + C6 |
+| 生成分镜视频 | `packages/contracts/api/shot.commands.ts#GenerateShotVideo` | `shot.video.generate` | `generation:start` | B | B8 + C6 |
+| 创建导出 | `packages/contracts/api/export.commands.ts#CreateExport` | `export.create` | `export:create` | B | B9 + C7 |
+| 创建订单 | `packages/contracts/api/billing.commands.ts#CreateBillingOrder` | `billing.create_order` | `billing:purchase` | A | A9 |
+| 创建支付意图 | `packages/contracts/api/billing.commands.ts#CreatePaymentIntent` | `billing.create_payment_intent` | `billing:purchase` | A | A9 |
+| 申请退款 | `packages/contracts/api/billing.commands.ts#RequestRefund` | `billing.request_refund` | `billing:refund` | A | A9 |
+
+## 2.7 幂等依赖拆分规则
+
+避免 A5 与 B1/B2 形成循环依赖：
+
+- M0.1 已提供 operation-scoped idempotency contract 和 shared helper，这是 B1/B2 可以开工的基础。
+- B1/B2/B7/B9 在各自命令里接入 shared helper，并写对应 idempotency tests。
+- A5 不是 B1 的前置阻塞项；A5 是跨模块 hardening/review 任务，负责把所有 creator command 的幂等语义统一验收。
+
+## 2.8 全局验证命令
 
 每个任务的局部测试在任务卡里定义；批次出口必须至少运行下列 gate 中对应部分。
 
@@ -120,7 +148,7 @@ Expected: login -> create project -> parse script -> confirm assets -> calibrate
 B0 Contracts
   -> A1/A2/A3 平台基础
       -> B1/B2 Project + Script parse
-          -> A4 Workflow/Task + B3/B4 Asset/Shot
+          -> A4 Workflow/Task + A-S1 Storage + B3/B4 Asset/Shot
               -> B5 Calibration
                   -> B6 Generate Image
                       -> B7 Export
@@ -135,6 +163,7 @@ B0 Contracts
 
 - B 的 Project/Shot 不能早于 A 的 ActorContext + tenant-safe query。
 - C 的 E2E 不能用假状态替代后端持久状态。
+- AssetVersion 和 Export 不能早于 A-S1 Storage adapter/signed URL contract。
 - 真 provider 不能早于 A6 ProviderRequest pre-call persistence。
 - 支付不能早于 A8 credit ledger 和官方/财税 gate。
 
@@ -157,16 +186,16 @@ B0 Contracts
 - Test: `apps/backend/src/modules/identity/tests/login-code.spec.ts`
 - Test: `apps/backend/src/modules/identity/tests/session.spec.ts`
 
-- [ ] Step 1: 写失败测试，覆盖 code hash、verify、consume once、expired/revoked、session token hash、revoke 后不可用。
+- [ ] Step 1: 写失败测试，覆盖 code hash、verify、consume once、expired/revoked、resend rate limit、verify lockout、IP/email bucket、session token hash、revoke 后不可用。
 - [ ] Step 2: 运行 `pnpm test apps/backend/src/modules/identity`，确认因 service 缺失失败。
 - [ ] Step 3: 实现最小 login-code/session domain service。明文 code/token 不落库、不进日志。
 - [ ] Step 4: 补错误码：`code_expired`、`code_consumed`、`code_invalid`、`user_disabled`。
 - [ ] Step 5: 运行 `pnpm test apps/backend/src/modules/identity`，确认通过。
 - [ ] Step 6: Commit: `feat: add email-code auth foundation`
 
-**异常处理:** 错码稳定；验证码错误增加 attempt count；已消费/过期 code 不能复用；disabled user 拒绝登录。
+**异常处理:** 错码稳定；验证码错误增加 attempt count；resend/verify 触发 rate limit 后返回稳定错误；已消费/过期 code 不能复用；disabled user 拒绝登录。
 
-**完成标准:** 测试通过；无明文敏感信息；session 可撤销；日志只允许 email hash/userId。
+**完成标准:** 测试通过；无明文敏感信息；session 可撤销；rate limit 和 lockout 可配置；日志只允许 email hash/userId。
 
 ### Task A2: ActorContext、Capability、Tenant-Safe Query
 
@@ -221,6 +250,34 @@ B0 Contracts
 
 **完成标准:** 审计事件不可变；字段完整；敏感 metadata 不泄露。
 
+### Task A-S1: Storage Adapter + Signed URL Contract
+
+**背景 / Why:** AssetVersion 和 Export 都会引用对象存储。如果没有统一 storage adapter，开发 B 可能把对象 key、bucket、公开 URL 和权限判断散落到 Asset/Export 里，后续会变成数据泄露和迁移事故。
+
+**交付能力:** 提供 server-only storage adapter contract，支持生成稳定 object key、写入 mock/local object metadata、读取安全 metadata、按租户权限生成短期 signed download URL。
+
+**前置依赖:** A2 ActorContext；`asset_versions`、`exports` schema draft；本地/mock storage 配置。
+
+**推进主链路:** Yes。它解锁 AssetVersion、shot image/video output、export package download。
+
+**Files:**
+- Create: `apps/backend/src/modules/storage/storage-adapter.contract.ts`
+- Create: `apps/backend/src/modules/storage/local-storage-adapter.ts`
+- Create: `apps/backend/src/modules/storage/signed-url.service.ts`
+- Test: `apps/backend/src/modules/storage/tests/storage-key-scope.spec.ts`
+- Test: `apps/backend/src/modules/storage/tests/signed-url-authorization.spec.ts`
+
+- [ ] Step 1: 写失败测试，覆盖 object key 必须含 organization/project scope、跨租户 signed URL 拒绝、过期 URL 不可刷新为永久 URL。
+- [ ] Step 2: 运行 `pnpm test apps/backend/src/modules/storage`，确认因 adapter/service 缺失失败。
+- [ ] Step 3: 实现最小 local/mock adapter；不引入真实云 SDK。
+- [ ] Step 4: 实现 signed URL service，只接受通过 ActorContext/capability 校验的请求。
+- [ ] Step 5: 运行 storage tests，确认通过。
+- [ ] Step 6: Commit: `feat: add storage adapter contract`
+
+**异常处理:** 存储写失败返回 retryable infrastructure error；metadata 不完整时禁止创建 AssetVersion；跨租户下载返回 403 并记录 audit/security log。
+
+**完成标准:** B3/B9 只能拿 storage object reference，不能直接拼公开 URL；C7 下载入口必须经过 signed URL service。
+
 ### Task A4: Workflow/Task/Attempt 骨架
 
 **背景 / Why:** P0 的核心复杂度不是 UI，而是长任务持久状态。BullMQ 只是调度，不是真相源。
@@ -256,7 +313,7 @@ B0 Contracts
 
 **交付能力:** `CreateProject`、`ParseScript`、`GenerateShotImage`、`CreateExport` 通过 idempotency record replay/conflict。
 
-**前置依赖:** A2、A4、B1/B2/B6/B9 对应命令。
+**前置依赖:** A2、A4、B1/B2/B7/B9 对应命令；M0.1 idempotency helper 已存在。
 
 **推进主链路:** Yes。它保护主链路不因重复操作失真。
 
@@ -268,7 +325,7 @@ B0 Contracts
 
 - [ ] Step 1: 写失败测试，覆盖 same key/same hash replay、same key/different hash 409、running workflow replay。
 - [ ] Step 2: 运行目标测试，确认失败。
-- [ ] Step 3: 将 idempotency helper 接入真实 command transaction。
+- [ ] Step 3: 审查并补齐真实 command transaction 里的 idempotency helper 接入；不要阻塞 B1/B2 首轮实现。
 - [ ] Step 4: 运行 IDEMP-003/004 和 R-002 相关测试，确认通过。
 - [ ] Step 5: Commit: `feat: wire idempotency into creator commands`
 
@@ -397,7 +454,7 @@ B0 Contracts
 
 **交付能力:** 用户在工作区创建项目并持久化 script。
 
-**前置依赖:** A2 ActorContext；A5 idempotency；project/script migration。
+**前置依赖:** A2 ActorContext；M0.1 idempotency helper；project/script migration。A5 是后续跨模块 hardening，不阻塞 B1 首轮。
 
 **推进主链路:** Yes。
 
@@ -423,7 +480,7 @@ B0 Contracts
 
 **交付能力:** ParseScript 创建 workflow/task，mock provider 产出 episodes/assets/shots。
 
-**前置依赖:** A4、A5、B1。
+**前置依赖:** A4、B1、M0.1 idempotency helper。A5 负责后续统一验收，不阻塞 B2 首轮。
 
 **推进主链路:** Yes。
 
@@ -450,7 +507,7 @@ B0 Contracts
 
 **交付能力:** Asset 表达业务对象，AssetVersion 表达不可变二进制/输出版本。
 
-**前置依赖:** B2 candidate assets；storage adapter 最小 contract。
+**前置依赖:** B2 candidate assets；A-S1 storage adapter 最小 contract。
 
 **推进主链路:** Yes。
 
@@ -601,7 +658,7 @@ B0 Contracts
 
 **交付能力:** 创建 export record/manifest，缺失资产清单明确。
 
-**前置依赖:** B3、B7，至少一个 completed image。
+**前置依赖:** B3、B7、A-S1，至少一个 completed image。
 
 **推进主链路:** Yes。
 
@@ -654,7 +711,7 @@ B0 Contracts
 
 **交付能力:** 项目创建表单、剧本输入、解析启动和 loading/queued 状态。
 
-**前置依赖:** B1/B2 APIs、A5 idempotency、C1 auth。
+**前置依赖:** B1/B2 APIs、M0.1 idempotency helper、C1 auth。
 
 **推进主链路:** Yes。
 
@@ -848,6 +905,33 @@ B0 Contracts
 **异常处理:** 每个 runbook 必须包含检测信号、查询入口、修复命令/人工处理、回滚条件。
 
 **完成标准:** M6 前 ops drill 通过。
+
+### Task C10: Admin/Ops Lite Manual Intervention
+
+**背景 / Why:** Repair 和 manual_review 如果只有后台脚本和 runbook，没有受控运营入口，线上问题会变成“知道怎么修但没人能安全执行”。P0 可以轻量，但不能没有人工介入闭环。
+
+**交付能力:** Admin/Ops Lite 页面或最小控制台，支持查看 stuck task、`result_unknown` provider request、paid-without-credit、payment risk event，并通过后端 domain command 发起 retry/settle/disable/mark-reviewed 操作。
+
+**前置依赖:** A3 audit；A7 repair；A8 credit ledger；A9 payment/risk gate；C9 runbook。
+
+**推进主链路:** No direct；它推进 M4-M6 上线 gate，让主链路失败后可以被定位和修复。
+
+**Files:**
+- Create: `apps/web/src/app/admin/ops/page.tsx`
+- Create: `apps/web/src/features/admin-ops/ops-queue.tsx`
+- Create: `apps/web/e2e/p0/admin-ops-manual-review.spec.ts`
+- Modify: `docs/architecture/runbooks/stuck-task.md`
+- Modify: `docs/architecture/runbooks/provider-result-unknown.md`
+
+- [ ] Step 1: 写 E2E 失败测试：Ops 用户可以看到 stuck/result_unknown item；普通用户 403；操作必须填写 reason。
+- [ ] Step 2: 实现只读列表，数据来自后端 Admin/Ops query，不直接读业务表。
+- [ ] Step 3: 接入 retry/settle/mark-reviewed domain command；所有操作写 audit。
+- [ ] Step 4: 验证 paid-without-credit 和 provider result_unknown runbook 能从 UI 跳到对应 item。
+- [ ] Step 5: Commit: `feat: add admin ops lite manual intervention`
+
+**异常处理:** 操作失败必须显示 traceId；重复 settle/retry no-op 或返回稳定冲突；高风险 payment/credit 操作必须进入二次确认。
+
+**完成标准:** manual_review 不再只是数据库状态；Ops 能在受控权限、审计和 runbook 指引下处理 M4-M6 gate。
 
 ## 7. 三人协作节奏
 

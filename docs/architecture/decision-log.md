@@ -967,7 +967,7 @@ When a shot image generation task succeeds:
 
 **Implications:**
 
-- Developer A owns platform trust: auth/session, actor context, tenant safety, audit, workflow/task, idempotency, provider safety, repair, credit, and payment gates.
+- Developer A owns platform trust: auth/session, actor context, tenant safety, audit, workflow/task, storage/signed URL boundary, idempotency, provider safety, repair, credit, and payment gates.
 - Developer B owns creator domain behavior: project/script, parse workflow, assets, shots, calibration, image/video generation, and export manifest.
 - Developer C owns user-visible delivery and release evidence: web flow, E2E, regression, observability, runbooks, and release/rollback gates.
 - Every task must answer what/why, delivered capability, prerequisites, verification method, failure handling, and whether it advances the main loop.
