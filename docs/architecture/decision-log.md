@@ -938,6 +938,23 @@ When a shot image generation task succeeds:
 - P0-A real provider usage is still gated by ProviderRequest pre-call persistence, `external_submission_started_at`, and no-blind-retry verification.
 - P0-B commerce/payment remains gated by official provider mapping, merchant capabilities, settlement/reporting process, and finance/tax approval.
 
+### D-051: Delivery Execution System Before M1/M2 Coding
+
+**Decision:** The team will manage P0 delivery through a capability-first execution system, not a module/file task list.
+
+**Rationale:**
+
+- The next project risk is no longer architecture ambiguity; it is execution drift, hidden dependencies, and tasks marked done without verifiable capability delivery.
+- P0-A must prove a real minimum runnable loop before broad product surface work.
+- Non-functional work such as tenant safety, idempotency, logs, repair jobs, tests, CI gates, release, rollback, and runbooks must be represented as first-class tasks.
+
+**Implications:**
+
+- `docs/architecture/p0-delivery-execution-system.md` is the baseline for minimum runnable loop, capability breakdown, dependency graph, development batches, task cards, DoD, risk front-loading, and delivery cadence.
+- M1 begins with Identity/Auth, Organization, tenant-safe queries, and Audit before Project/Script/Shot work.
+- The first implementation plan after M0.1 is `docs/superpowers/plans/2026-05-08-m1-platform-foundation.md`.
+- A task may not move to Done unless its acceptance criteria, tests, and observability requirements are verified.
+
 ## Open Questions
 
 These are not yet decided:
