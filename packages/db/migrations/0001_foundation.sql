@@ -3,7 +3,8 @@
 
 CREATE TABLE users (
   id uuid PRIMARY KEY,
-  email text NOT NULL UNIQUE,
+  email text UNIQUE,
+  phone_e164 text UNIQUE NULL,
   display_name text NULL,
   password_hash text NULL,
   status text NOT NULL CHECK (status IN ('active', 'disabled')),
@@ -30,6 +31,39 @@ CREATE TABLE workspaces (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id)
+);
+
+CREATE TABLE login_challenges (
+  id uuid PRIMARY KEY,
+  phone_e164 text NOT NULL,
+  code_hash text NOT NULL,
+  status text NOT NULL CHECK (
+    status IN ('issued', 'consumed', 'expired', 'revoked', 'locked')
+  ),
+  attempt_count integer NOT NULL DEFAULT 0,
+  max_attempts integer NOT NULL DEFAULT 5,
+  expires_at timestamptz NOT NULL,
+  last_sent_at timestamptz NOT NULL,
+  consumed_at timestamptz NULL,
+  revoked_at timestamptz NULL,
+  created_ip_hash text NULL,
+  created_user_agent_hash text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX login_challenges_phone_status_idx
+  ON login_challenges (phone_e164, status, created_at DESC);
+
+CREATE TABLE auth_sessions (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id),
+  status text NOT NULL CHECK (status IN ('active', 'revoked', 'expired')),
+  session_token_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  last_seen_at timestamptz NULL,
+  revoked_at timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE idempotency_records (
