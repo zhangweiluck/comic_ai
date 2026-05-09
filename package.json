@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/run-tests.mjs"
+    "test": "node scripts/run-tests.mjs",
+    "dev:phone-auth": "node apps/backend/src/entrypoints/phone-auth-dev-server.ts"
   }
 }

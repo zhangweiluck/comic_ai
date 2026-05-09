@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>已登录</title>
+    <link rel="stylesheet" href="./login.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+
+    <main class="login-shell">
+      <section class="login-frame">
+        <div class="intro-panel">
+          <div class="intro-topline">
+            <p class="eyebrow">Comic AI Studio</p>
+            <span class="status-pill">Authenticated</span>
+          </div>
+
+          <div class="hero-copy">
+            <h1>验证通过，工作台已准备就绪</h1>
+            <p class="subtitle">
+              当前页仍然是开发占位态，但认证闭环、会话读取与退出流程已经接通，后续这里会替换成真正的创作入口。
+            </p>
+          </div>
+        </div>
+
+        <section class="auth-panel">
+          <div class="panel-head">
+            <p class="panel-kicker">当前会话</p>
+            <h2>已登录</h2>
+            <p id="session-summary" class="panel-copy">正在读取当前会话...</p>
+          </div>
+
+          <button id="logout-button" class="secondary-action" type="button">退出登录</button>
+        </section>
+      </section>
+    </main>
+
+    <script type="module">
+      const summary = document.querySelector("#session-summary");
+      const logoutButton = document.querySelector("#logout-button");
+
+      async function loadSession() {
+        const response = await fetch("/api/auth/session", {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          window.location.href = "/login.html";
+          return;
+        }
+
+        const payload = await response.json();
+        summary.textContent = `当前账号：${payload.user.phone}`;
+      }
+
+      logoutButton?.addEventListener("click", async () => {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+
+        window.location.href = "/login.html";
+      });
+
+      await loadSession();
+    </script>
+  </body>
+</html>

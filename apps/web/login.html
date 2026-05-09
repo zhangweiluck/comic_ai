@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>手机号登录</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./login.css" />
+  </head>
+  <body>
+    <canvas id="fluid-canvas" aria-hidden="true"></canvas>
+
+    <main class="login-shell">
+      <section class="login-frame">
+        <div class="intro-panel">
+          <div class="intro-topline">
+            <p class="eyebrow">Comic AI Studio</p>
+            <span class="status-pill">System Active</span>
+          </div>
+
+          <div class="hero-copy">
+            <h1>进入你的创作控制台</h1>
+            <p class="subtitle">
+              从剧本解析、公共资产，到分镜生成与导出，所有生产环节都在同一条工作流里保持可控。
+            </p>
+          </div>
+
+          <div class="signal-grid" aria-hidden="true">
+            <div class="signal-card">
+              <span class="signal-label">Pipeline</span>
+              <strong>Script → Shot → Export</strong>
+            </div>
+            <div class="signal-card">
+              <span class="signal-label">Session</span>
+              <strong>Server-side Verified</strong>
+            </div>
+            <div class="signal-card">
+              <span class="signal-label">Identity</span>
+              <strong>Mainland Phone Auth</strong>
+            </div>
+            <div class="signal-card">
+              <span class="signal-label">Mode</span>
+              <strong>Development Access</strong>
+            </div>
+          </div>
+
+          <div class="entry-note">
+            <span class="entry-line" aria-hidden="true"></span>
+            <p>
+              这个入口页刻意保持安静，目的是先建立工具的可信度，再把注意力交还给创作任务。
+            </p>
+          </div>
+        </div>
+
+        <section class="auth-panel">
+          <div class="panel-head">
+            <p class="panel-kicker">身份验证</p>
+            <h2>手机号登录</h2>
+            <p class="panel-copy">
+              使用中国大陆手机号获取验证码，进入当前开发环境。
+            </p>
+          </div>
+
+          <form id="login-form" class="login-form">
+            <label class="field">
+              <span>手机号</span>
+              <input
+                id="phone-input"
+                name="phone"
+                inputmode="numeric"
+                maxlength="11"
+                placeholder="13800138000"
+                autocomplete="tel"
+              />
+            </label>
+
+            <button id="request-code-button" class="secondary-action" type="button">
+              获取验证码
+            </button>
+
+            <label class="field">
+              <span>验证码</span>
+              <input
+                id="code-input"
+                name="code"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="请输入6位验证码"
+                autocomplete="one-time-code"
+              />
+            </label>
+
+            <button id="verify-button" class="primary-action" type="submit">进入工作台</button>
+          </form>
+
+          <div class="social-login">
+            <div class="social-divider">
+              <span class="social-divider-line"></span>
+              <span class="social-divider-text">其他方式登录</span>
+              <span class="social-divider-line"></span>
+            </div>
+            <div class="social-icons" role="group" aria-label="第三方登录方式">
+              <button type="button" class="social-btn wechat" aria-label="微信登录">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M9.5 4C5.91 4 3 6.462 3 9.5c0 1.68.89 3.173 2.27 4.153-.1.56-.42 1.44-.66 2.107 1.1-.153 2.293-.7 2.94-1.147.63.173 1.3.267 2 .267 3.59 0 6.5-2.462 6.5-5.5S13.09 4 9.5 4zM7 8.75a.75.75 0 110-1.5.75.75 0 010 1.5zm5 0a.75.75 0 110-1.5.75.75 0 010 1.5z" fill="currentColor"/>
+                  <path d="M14.76 9.027c-.013.16-.02.32-.02.487 0 3.62 3.18 6.56 7.1 6.56.54 0 1.06-.06 1.56-.167.507.353 1.407.78 2.253.893-.187-.507-.427-1.18-.507-1.62 1.093-.773 1.793-1.927 1.793-3.22 0-2.353-2.24-4.26-5-4.26-2.76 0-5 1.907-5 4.26 0 .14.007.28.02.42l-.2-.353zM17.5 13.5a.625.625 0 110-1.25.625.625 0 010 1.25zm3.75 0a.625.625 0 110-1.25.625.625 0 010 1.25z" fill="currentColor" opacity=".85"/>
+                </svg>
+              </button>
+              <button type="button" class="social-btn alipay" aria-label="支付宝登录">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M5 4h14v16H5V4zm2 2v3h4.5c-.3-.9-.9-2.1-1.5-3H7zm6 0c.6.9 1.2 2.1 1.5 3H17V6h-4zM7 10v1h10v-1H7zm0 2v1h3.5c.5-1.2 1-2.5 1.3-3.8-.4.5-.8 1.2-1.1 1.8H7zm4.5 0c.2-.5.5-1 .7-1.5.3.5.6 1 1 1.5h-1.7zm2.8 0c-.4-.6-.8-1.3-1.1-2 .3-.2.6-.4 1-.5.3.9.5 1.8.5 2.5h-.4zM7 14v1h10v-1H7zm0 2v1h10v-1H7z" fill="currentColor"/>
+                </svg>
+              </button>
+              <button type="button" class="social-btn qq" aria-label="QQ登录">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M12 3c-3.87 0-7 2.24-7 5 0 1.65.96 3.12 2.45 4.06-.1.44-.33 1.13-.54 1.68 1.68-.18 2.93-.67 3.59-1.1.5.13 1.03.2 1.59.2 3.87 0 7-2.24 7-5s-3.13-5-7-5zm-2 5.5a.75.75 0 110-1.5.75.75 0 010 1.5zm4 0a.75.75 0 110-1.5.75.75 0 010 1.5z" fill="currentColor"/>
+                  <path d="M12 13.5c-2.2 0-4.17.73-5.3 1.87.67 2.4 2.47 4.13 4.55 4.13h1.5c2.08 0 3.88-1.73 4.55-4.13-1.13-1.14-3.1-1.87-5.3-1.87z" fill="currentColor" opacity=".85"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <pre id="debug-panel" class="debug-panel" hidden></pre>
+          <p id="status-message" class="status-message" aria-live="polite"></p>
+        </section>
+      </section>
+    </main>
+
+    <div class="version-info" aria-hidden="true">
+      <span>v0.9.0</span>
+      <span class="version-separator">·</span>
+      <span>Build 2024.12.18</span>
+    </div>
+
+    <script type="module" src="./login.js"></script>
+  </body>
+</html>
