@@ -6,6 +6,10 @@ import {
 } from "./parse-script.service.ts";
 import { type ActorContext } from "./create-project.command.ts";
 import { type InMemoryProjectStore } from "./project.service.ts";
+import {
+  IdempotencyConflictError,
+  IdempotencyProcessingError,
+} from "../shared/idempotency/idempotency.service.ts";
 
 export function createParseScriptCommandHandler(deps: {
   store: InMemoryProjectStore;
@@ -62,6 +66,20 @@ export function createParseScriptCommandHandler(deps: {
       if (error instanceof ParseScriptStateError) {
         return {
           status: 409,
+          body: { error: error.code },
+        };
+      }
+
+      if (error instanceof IdempotencyConflictError) {
+        return {
+          status: 409,
+          body: { error: error.code },
+        };
+      }
+
+      if (error instanceof IdempotencyProcessingError) {
+        return {
+          status: 202,
           body: { error: error.code },
         };
       }

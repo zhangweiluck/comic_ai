@@ -78,4 +78,64 @@ describe("parse script command handler", () => {
     assert.equal(response.status, 403);
     assert.deepEqual(response.body, { error: "forbidden" });
   });
+
+  it("returns 409 when the same parse idempotency key is reused with a different request", async () => {
+    const store = new InMemoryProjectStore();
+    const firstProject = await createProjectDraft(store, {
+      organizationId: "org_1",
+      workspaceId: "workspace_1",
+      createdByUserId: "user_1",
+      ...createProjectCommandFixture(),
+    });
+    const secondProject = await createProjectDraft(store, {
+      organizationId: "org_1",
+      workspaceId: "workspace_1",
+      createdByUserId: "user_1",
+      ...createProjectCommandFixture(),
+      name: "Second project",
+      idempotencyKey: "create-second-project",
+    });
+    let workflowRequests = 0;
+    const handler = createParseScriptCommandHandler({
+      store,
+      resolveActorContext: async () => ({
+        actorId: "user_1",
+        organizationId: "org_1",
+        workspaceId: "workspace_1",
+        capabilities: [capabilities.projectEdit],
+      }),
+      requestWorkflow: async () => {
+        workflowRequests += 1;
+        return {
+          workflowId: `workflow_parse_${workflowRequests}`,
+          taskId: `task_parse_${workflowRequests}`,
+          taskStatus: "queued" as const,
+        };
+      },
+    });
+
+    const first = await handler({
+      auth: { sessionToken: "session_1" },
+      body: {
+        projectId: firstProject.project.id,
+        scriptId: firstProject.script.id,
+      },
+      idempotencyKey: "parse-conflict",
+      now: new Date("2026-05-16T10:00:00.000Z"),
+    });
+    const conflict = await handler({
+      auth: { sessionToken: "session_1" },
+      body: {
+        projectId: secondProject.project.id,
+        scriptId: secondProject.script.id,
+      },
+      idempotencyKey: "parse-conflict",
+      now: new Date("2026-05-16T10:00:01.000Z"),
+    });
+
+    assert.equal(first.status, 202);
+    assert.equal(conflict.status, 409);
+    assert.deepEqual(conflict.body, { error: "idempotency_conflict" });
+    assert.equal(workflowRequests, 1);
+  });
 });

@@ -137,4 +137,43 @@ describe("create project command handler", () => {
     assert.equal(replay.body.project.id, first.body.project.id);
     assert.deepEqual(auditLog, [first.body.project.id]);
   });
+
+  it("returns 409 when the same idempotency key is reused with a different request", async () => {
+    const store = new InMemoryProjectStore();
+    const auditLog: string[] = [];
+    const handler = createProjectCommandHandler({
+      store,
+      resolveActorContext: async () => ({
+        actorId: "user_1",
+        organizationId: "org_1",
+        workspaceId: "workspace_1",
+        capabilities: [capabilities.projectCreate],
+      }),
+      appendAuditEvent: async (event) => {
+        auditLog.push(event.targetId);
+      },
+    });
+
+    const fixture = createProjectCommandFixture();
+    const first = await handler({
+      auth: { sessionToken: "session_1" },
+      body: fixture,
+      idempotencyKey: fixture.idempotencyKey,
+      now: new Date("2026-05-15T10:00:00.000Z"),
+    });
+    const conflict = await handler({
+      auth: { sessionToken: "session_1" },
+      body: {
+        ...fixture,
+        name: "Different title",
+      },
+      idempotencyKey: fixture.idempotencyKey,
+      now: new Date("2026-05-15T10:00:01.000Z"),
+    });
+
+    assert.equal(first.status, 200);
+    assert.equal(conflict.status, 409);
+    assert.deepEqual(conflict.body, { error: "idempotency_conflict" });
+    assert.deepEqual(auditLog, [first.body.project.id]);
+  });
 });

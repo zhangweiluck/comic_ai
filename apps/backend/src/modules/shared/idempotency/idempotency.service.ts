@@ -17,6 +17,7 @@ export interface IdempotencyRecord {
   requestHash: string;
   responseResourceType?: string;
   responseResourceId?: string;
+  responseSnapshot?: Record<string, unknown>;
   status: IdempotencyRecordStatus;
   expiresAt: Date;
   createdAt: Date;
@@ -30,6 +31,7 @@ export interface BeginOrReplayCommandInput {
   requestHash: string;
   responseResourceType?: string;
   responseResourceId?: string;
+  responseSnapshot?: Record<string, unknown>;
   ttlMs?: number;
 }
 
@@ -43,6 +45,14 @@ export class IdempotencyConflictError extends Error {
 
   constructor() {
     super("Idempotency key was reused with a different request hash.");
+  }
+}
+
+export class IdempotencyProcessingError extends Error {
+  readonly code = "idempotency_processing";
+
+  constructor(readonly record: IdempotencyRecord) {
+    super("Idempotency key is already processing.");
   }
 }
 
@@ -69,26 +79,7 @@ export async function beginOrReplayCommand(
   });
 
   if (existing) {
-    if (existing.requestHash !== input.requestHash) {
-      throw new IdempotencyConflictError();
-    }
-
-    if (input.responseResourceId && !existing.responseResourceId) {
-      const updated = await store.update({
-        ...existing,
-        responseResourceType: input.responseResourceType,
-        responseResourceId: input.responseResourceId,
-        status: "succeeded",
-        updatedAt: new Date(),
-      });
-      return { kind: "replayed", record: updated };
-    }
-
-    if (existing.status === "processing" && !existing.responseResourceId) {
-      return { kind: "processing", record: existing };
-    }
-
-    return { kind: "replayed", record: existing };
+    return handleExistingRecord(store, input, existing);
   }
 
   const now = new Date();
@@ -100,13 +91,32 @@ export async function beginOrReplayCommand(
     requestHash: input.requestHash,
     responseResourceType: input.responseResourceType,
     responseResourceId: input.responseResourceId,
+    responseSnapshot: input.responseSnapshot,
     status: input.responseResourceId ? "succeeded" : "processing",
     expiresAt: new Date(now.getTime() + (input.ttlMs ?? defaultTtlMs)),
     createdAt: now,
     updatedAt: now,
   };
 
-  return { kind: "created", record: await store.insert(record) };
+  try {
+    return { kind: "created", record: await store.insert(record) };
+  } catch (error) {
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+
+    const raced = await store.findForUpdate({
+      organizationId: input.organizationId,
+      operationName: input.operationName,
+      idempotencyKey: input.idempotencyKey,
+    });
+
+    if (!raced) {
+      throw error;
+    }
+
+    return handleExistingRecord(store, input, raced);
+  }
 }
 
 export class InMemoryIdempotencyRecordStore implements IdempotencyRecordStore {
@@ -137,4 +147,41 @@ function recordKey(input: {
   idempotencyKey: string;
 }): string {
   return `${input.organizationId}:${input.operationName}:${input.idempotencyKey}`;
+}
+
+async function handleExistingRecord(
+  store: IdempotencyRecordStore,
+  input: BeginOrReplayCommandInput,
+  existing: IdempotencyRecord,
+): Promise<BeginOrReplayCommandResult> {
+  if (existing.requestHash !== input.requestHash) {
+    throw new IdempotencyConflictError();
+  }
+
+  if (input.responseResourceId && !existing.responseResourceId) {
+    const updated = await store.update({
+      ...existing,
+      responseResourceType: input.responseResourceType,
+      responseResourceId: input.responseResourceId,
+      responseSnapshot: input.responseSnapshot,
+      status: "succeeded",
+      updatedAt: new Date(),
+    });
+    return { kind: "replayed", record: updated };
+  }
+
+  if (existing.status === "processing" && !existing.responseResourceId) {
+    return { kind: "processing", record: existing };
+  }
+
+  return { kind: "replayed", record: existing };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "23505"
+  );
 }

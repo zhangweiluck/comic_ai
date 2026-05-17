@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -10,19 +10,21 @@ const ignoredDirectories = new Set([
 const args = process.argv.slice(2);
 const targets = args.length > 0 ? args : ["."];
 const testFiles = targets.flatMap((target) => expandTarget(target));
-const hasTypeScriptTests = testFiles.some((file) => file.endsWith(".ts"));
+const perFileTimeoutMs = Number(process.env.TEST_FILE_TIMEOUT_MS ?? 60_000);
 
 if (testFiles.length === 0) {
   console.error(`No test files found for: ${targets.join(", ")}`);
   process.exit(1);
 }
 
-const command = resolveTestCommand(testFiles, hasTypeScriptTests);
-const result = spawnSync(command.runtime, command.args, {
-  stdio: "inherit",
-});
+for (const testFile of testFiles) {
+  const command = resolveTestCommand([testFile], testFile.endsWith(".ts"));
+  const status = await runCommand(command, testFile);
 
-process.exit(result.status ?? 1);
+  if (status !== 0) {
+    process.exit(status);
+  }
+}
 
 function expandTarget(target) {
   const stats = statSync(target);
@@ -62,22 +64,36 @@ function resolveTestCommand(testFiles, hasTypeScriptTests) {
   const runtime = findNodeRuntime(18);
 
   if (hasTypeScriptTests) {
-    const tsxEntrypoint = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+    const tsxLoader = join(process.cwd(), "node_modules", "tsx", "dist", "loader.mjs");
 
-    if (!existsSync(tsxEntrypoint)) {
-      console.error("Unable to find tsx runtime at node_modules/tsx/dist/cli.mjs");
+    if (!existsSync(tsxLoader)) {
+      console.error("Unable to find tsx loader at node_modules/tsx/dist/loader.mjs");
       process.exit(1);
     }
 
     return {
       runtime,
-      args: [tsxEntrypoint, "--test", ...testFiles],
+      args: [
+        "--test",
+        "--test-isolation=none",
+        "--test-concurrency=1",
+        "--test-reporter=tap",
+        "--import",
+        tsxLoader,
+        ...testFiles,
+      ],
     };
   }
 
   return {
     runtime,
-    args: ["--test", ...testFiles],
+    args: [
+      "--test",
+      "--test-isolation=none",
+      "--test-concurrency=1",
+      "--test-reporter=tap",
+      ...testFiles,
+    ],
   };
 }
 
@@ -123,4 +139,48 @@ function findNodeRuntime(minMajor) {
     seen.add(candidate);
     candidates.push(candidate);
   }
+}
+
+function runCommand(command, testFile) {
+  return new Promise((resolve) => {
+    const child = spawn(command.runtime, command.args, {
+      stdio: "inherit",
+    });
+    let settled = false;
+    let killTimer;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      console.error(
+        `Test file timed out after ${perFileTimeoutMs}ms: ${testFile} (pid ${child.pid})`,
+      );
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!settled) {
+          child.kill("SIGKILL");
+        }
+      }, 2_000);
+    }, perFileTimeoutMs);
+
+    child.on("close", (code, signal) => {
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(killTimer);
+      if (signal) {
+        resolve(signal === "SIGTERM" || signal === "SIGKILL" ? 124 : 1);
+        return;
+      }
+
+      resolve(code ?? 1);
+    });
+
+    child.on("error", () => {
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(killTimer);
+      resolve(1);
+    });
+  });
 }

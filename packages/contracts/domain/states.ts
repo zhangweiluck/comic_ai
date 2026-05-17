@@ -6,6 +6,7 @@ export const loginCodeStatuses = [
   "consumed",
   "expired",
   "revoked",
+  "locked",
 ] as const;
 export type LoginCodeStatus = (typeof loginCodeStatuses)[number];
 
@@ -58,6 +59,7 @@ export const attemptStatuses = [
 export type AttemptStatus = (typeof attemptStatuses)[number];
 
 export const providerRequestStatuses = [
+  "created",
   "submitted",
   "accepted",
   "running",
