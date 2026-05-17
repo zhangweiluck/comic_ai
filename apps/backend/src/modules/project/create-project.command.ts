@@ -4,8 +4,12 @@ import { createProjectCommand } from "../../../../../packages/contracts/api/proj
 import {
   createProjectDraft,
   CreateProjectValidationError,
-  type InMemoryProjectStore,
+  type ProjectStore,
 } from "./project.service.ts";
+import {
+  IdempotencyConflictError,
+  IdempotencyProcessingError,
+} from "../shared/idempotency/idempotency.service.ts";
 
 export interface ActorContext {
   actorId: string;
@@ -57,7 +61,7 @@ export interface CreateProjectCommandResponse {
 }
 
 export function createProjectCommandHandler(deps: {
-  store: InMemoryProjectStore;
+  store: ProjectStore;
   resolveActorContext: (input: {
     sessionToken: string;
     workspaceId: string;
@@ -126,6 +130,20 @@ export function createProjectCommandHandler(deps: {
             error: "invalid_project_input",
             fieldErrors: error.fieldErrors,
           },
+        };
+      }
+
+      if (error instanceof IdempotencyConflictError) {
+        return {
+          status: 409,
+          body: { error: error.code },
+        };
+      }
+
+      if (error instanceof IdempotencyProcessingError) {
+        return {
+          status: 202,
+          body: { error: error.code },
         };
       }
 

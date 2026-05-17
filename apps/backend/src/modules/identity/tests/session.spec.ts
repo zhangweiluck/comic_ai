@@ -16,7 +16,27 @@ describe("auth sessions", () => {
     });
 
     assert.notEqual(created.session.sessionTokenHash, "plain-token");
-    assert.equal(verifySessionToken(created.session, "plain-token"), true);
+    assert.equal(
+      verifySessionToken(
+        created.session,
+        "plain-token",
+        new Date("2026-05-09T10:00:30.000Z"),
+      ),
+      true,
+    );
+  });
+
+  it("generates high-entropy non-UUID session tokens by default", async () => {
+    const created = await createAuthSession({
+      userId: "user_1",
+      now: new Date("2026-05-09T10:00:00.000Z"),
+    });
+
+    assert.ok(created.token.length >= 43);
+    assert.doesNotMatch(
+      created.token,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
   });
 
   it("rejects revoked sessions", async () => {

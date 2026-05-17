@@ -3,10 +3,12 @@ import type {
   VerifyLoginChallengeResult,
 } from "./phone-auth.types.ts";
 import {
+  currentAuthHashVersion,
   generateIdentityId,
   generateVerificationCode,
-  hashSecret,
+  hashVerificationCode,
   normalizeCnPhone,
+  secureHashEquals,
 } from "./phone-auth.utils.ts";
 
 export async function createLoginChallenge(input: {
@@ -16,12 +18,17 @@ export async function createLoginChallenge(input: {
   maxAttempts?: number;
 }): Promise<LoginChallenge> {
   const phoneE164 = normalizeCnPhone(input.phone);
+  const challengeId = generateIdentityId();
   const plainCode = input.code ?? generateVerificationCode();
 
   return {
-    id: generateIdentityId(),
+    id: challengeId,
     phoneE164,
-    codeHash: hashSecret(plainCode),
+    codeHash: hashVerificationCode({
+      challengeId,
+      code: plainCode,
+    }),
+    codeHashVersion: currentAuthHashVersion,
     status: "issued",
     attemptCount: 0,
     maxAttempts: input.maxAttempts ?? 5,
@@ -70,7 +77,15 @@ export function verifyLoginChallengeCode(input: {
     };
   }
 
-  if (hashSecret(input.code) === input.challenge.codeHash) {
+  const codeHash = hashVerificationCode({
+    challengeId: input.challenge.id,
+    code: input.code,
+  });
+
+  if (
+    input.challenge.codeHashVersion === currentAuthHashVersion &&
+    secureHashEquals(codeHash, input.challenge.codeHash)
+  ) {
     return {
       kind: "verified",
       challenge: {

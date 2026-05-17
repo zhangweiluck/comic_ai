@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/run-tests.mjs",
+    "test": "bash scripts/run-tests.sh",
     "dev:phone-auth": "node scripts/run-phone-auth-dev-server.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
+    "tsx": "^4.22.1"
   }
 }

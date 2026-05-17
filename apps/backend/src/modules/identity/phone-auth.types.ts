@@ -9,6 +9,7 @@ export interface LoginChallenge {
   id: string;
   phoneE164: string;
   codeHash: string;
+  codeHashVersion: number;
   status: LoginChallengeStatus;
   attemptCount: number;
   maxAttempts: number;

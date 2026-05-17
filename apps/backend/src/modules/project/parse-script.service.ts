@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { operationNames } from "../../../../../packages/contracts/domain/operation-names.ts";
-import { beginOrReplayCommand } from "../shared/idempotency/idempotency.service.ts";
+import {
+  beginOrReplayCommand,
+  IdempotencyProcessingError,
+} from "../shared/idempotency/idempotency.service.ts";
 import { createDeterministicParseScriptMockOutput, type ParseScriptMockOutput } from "./project-readiness.ts";
-import { type InMemoryProjectStore } from "./project.service.ts";
+import { type ProjectStore } from "./project.service.ts";
 
 export class ParseScriptStateError extends Error {
   constructor(readonly code: "project_not_found" | "script_not_ready" | "script_project_mismatch") {
@@ -18,7 +21,7 @@ export interface WorkflowRequestResult {
 }
 
 export async function createParseScriptWorkflowRequest(
-  store: InMemoryProjectStore,
+  store: ProjectStore,
   input: {
     organizationId: string;
     projectId: string;
@@ -33,12 +36,18 @@ export async function createParseScriptWorkflowRequest(
     }) => Promise<WorkflowRequestResult>;
   },
 ) {
-  const project = await store.findProject(input.projectId);
+  const project = await store.findProjectByTenant({
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
   if (!project) {
     throw new ParseScriptStateError("project_not_found");
   }
 
-  const script = await store.findScript(input.scriptId);
+  const script = await store.findScriptByTenant({
+    organizationId: input.organizationId,
+    scriptId: input.scriptId,
+  });
   if (!script || script.projectId !== input.projectId) {
     throw new ParseScriptStateError("script_project_mismatch");
   }
@@ -70,6 +79,10 @@ export async function createParseScriptWorkflowRequest(
       idempotencyRecord: started.record,
       idempotencyResult: "replayed" as const,
     };
+  }
+
+  if (started.kind === "processing") {
+    throw new IdempotencyProcessingError(started.record);
   }
 
   const workflow = await input.requestWorkflow({

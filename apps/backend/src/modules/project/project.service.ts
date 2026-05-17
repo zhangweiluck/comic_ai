@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { operationNames } from "../../../../../packages/contracts/domain/operation-names.ts";
-import { beginOrReplayCommand, InMemoryIdempotencyRecordStore } from "../shared/idempotency/idempotency.service.ts";
+import {
+  beginOrReplayCommand,
+  type IdempotencyRecordStore,
+  IdempotencyProcessingError,
+  InMemoryIdempotencyRecordStore,
+} from "../shared/idempotency/idempotency.service.ts";
 
 export type ScriptStatus = "draft" | "ready" | "parsed" | "failed";
 export type ProjectAspectRatio = "9:16" | "16:9";
@@ -63,8 +68,35 @@ export class CreateProjectValidationError extends Error {
   }
 }
 
-export class InMemoryProjectStore {
-  readonly idempotency = new InMemoryIdempotencyRecordStore();
+export interface ProjectStore {
+  readonly idempotency: IdempotencyRecordStore;
+  createProjectWithScript(input: {
+    organizationId: string;
+    workspaceId: string;
+    createdByUserId: string;
+    name: string;
+    scriptInput: string;
+    aspectRatio: ProjectAspectRatio;
+    resolution: ProjectResolution;
+  }): Promise<ProjectBundle>;
+  findProjectBundle(projectId: string): Promise<ProjectBundle | undefined>;
+  findProject(projectId: string): Promise<ProjectRecord | undefined>;
+  findProjectByTenant(input: {
+    organizationId: string;
+    projectId: string;
+  }): Promise<ProjectRecord | undefined>;
+  findScript(scriptId: string): Promise<ScriptRecord | undefined>;
+  findScriptByTenant(input: {
+    organizationId: string;
+    scriptId: string;
+  }): Promise<ScriptRecord | undefined>;
+  updateScript(script: ScriptRecord): Promise<ScriptRecord>;
+  saveWorkflowRequest(record: WorkflowRequestRecord): Promise<WorkflowRequestRecord>;
+  findWorkflowRequest(workflowId: string): Promise<WorkflowRequestRecord | undefined>;
+}
+
+export class InMemoryProjectStore implements ProjectStore {
+  readonly idempotency: IdempotencyRecordStore = new InMemoryIdempotencyRecordStore();
   private readonly bundlesByProjectId = new Map<string, ProjectBundle>();
   private readonly projectsById = new Map<string, ProjectRecord>();
   private readonly scriptsById = new Map<string, ScriptRecord>();
@@ -122,8 +154,24 @@ export class InMemoryProjectStore {
     return this.projectsById.get(projectId);
   }
 
+  async findProjectByTenant(input: {
+    organizationId: string;
+    projectId: string;
+  }): Promise<ProjectRecord | undefined> {
+    const project = this.projectsById.get(input.projectId);
+    return project?.organizationId === input.organizationId ? project : undefined;
+  }
+
   async findScript(scriptId: string): Promise<ScriptRecord | undefined> {
     return this.scriptsById.get(scriptId);
+  }
+
+  async findScriptByTenant(input: {
+    organizationId: string;
+    scriptId: string;
+  }): Promise<ScriptRecord | undefined> {
+    const script = this.scriptsById.get(input.scriptId);
+    return script?.organizationId === input.organizationId ? script : undefined;
   }
 
   async updateScript(script: ScriptRecord): Promise<ScriptRecord> {
@@ -149,7 +197,7 @@ export class InMemoryProjectStore {
 }
 
 export async function createProjectDraft(
-  store: InMemoryProjectStore,
+  store: ProjectStore,
   input: CreateProjectDraftInput,
 ) {
   const fieldErrors = validateCreateProjectInput(input);
@@ -178,6 +226,10 @@ export async function createProjectDraft(
     };
   }
 
+  if (started.kind === "processing") {
+    throw new IdempotencyProcessingError(started.record);
+  }
+
   const bundle = await store.createProjectWithScript({
     organizationId: input.organizationId,
     workspaceId: input.workspaceId,
@@ -204,7 +256,7 @@ export async function createProjectDraft(
   };
 }
 
-function validateCreateProjectInput(input: CreateProjectDraftInput) {
+export function validateCreateProjectInput(input: CreateProjectDraftInput) {
   const fieldErrors: Record<string, string> = {};
 
   if (input.name.trim().length < 1 || input.name.trim().length > 60) {
@@ -226,7 +278,7 @@ function validateCreateProjectInput(input: CreateProjectDraftInput) {
   return fieldErrors;
 }
 
-function hashCreateProjectInput(input: CreateProjectDraftInput) {
+export function hashCreateProjectInput(input: CreateProjectDraftInput) {
   return createHash("sha256")
     .update(
       JSON.stringify({

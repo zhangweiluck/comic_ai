@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { operationNames } from "../../../../../../packages/contracts/domain/operation-names.ts";
+import { beginOrReplayCommand, IdempotencyProcessingError } from "../../shared/idempotency/idempotency.service.ts";
 import {
   createDeterministicMockParseResult,
   createParseScriptWorkflowRequest,
@@ -99,6 +100,52 @@ describe("parse script service", () => {
     assert.equal(replay.workflow.workflowId, "workflow_2");
     assert.equal(replay.idempotencyResult, "replayed");
     assert.equal(workflowRequests, 1);
+  });
+
+  it("does not create a second workflow while the same parse key is already processing", async () => {
+    const store = new InMemoryProjectStore();
+    const created = await createProjectDraft(store, {
+      organizationId: "org_1",
+      workspaceId: "workspace_1",
+      createdByUserId: "user_1",
+      ...createProjectCommandFixture(),
+    });
+    const idempotencyKey = "parse-script-processing";
+
+    await beginOrReplayCommand(store.idempotency, {
+      organizationId: "org_1",
+      operationName: operationNames.scriptParse,
+      idempotencyKey,
+      requestHash: JSON.stringify({
+        projectId: created.project.id,
+        scriptId: created.script.id,
+      }),
+    });
+
+    let workflowRequests = 0;
+    await assert.rejects(
+      createParseScriptWorkflowRequest(store, {
+        organizationId: "org_1",
+        projectId: created.project.id,
+        scriptId: created.script.id,
+        createdByUserId: "user_1",
+        idempotencyKey,
+        requestWorkflow: async () => {
+          workflowRequests += 1;
+          return {
+            workflowId: "workflow_duplicate",
+            taskId: "task_duplicate",
+            taskStatus: "queued",
+          };
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof IdempotencyProcessingError);
+        assert.equal(error.record.operationName, operationNames.scriptParse);
+        return true;
+      },
+    );
+    assert.equal(workflowRequests, 0);
   });
 
   it("rejects parse when project and script are not in a parseable state", async () => {

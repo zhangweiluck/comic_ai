@@ -54,6 +54,23 @@ describe("login challenges", () => {
     );
   });
 
+  it("binds code hashes to the challenge id and records the hash version", async () => {
+    const first = await createLoginChallenge({
+      phone: "13800138000",
+      now: new Date("2026-05-09T10:00:00.000Z"),
+      code: "123456",
+    });
+    const second = await createLoginChallenge({
+      phone: "13800138000",
+      now: new Date("2026-05-09T10:00:00.000Z"),
+      code: "123456",
+    });
+
+    assert.equal(first.codeHashVersion, 1);
+    assert.equal(second.codeHashVersion, 1);
+    assert.notEqual(first.codeHash, second.codeHash);
+  });
+
   it("locks the challenge after too many invalid attempts", async () => {
     const challenge = await createLoginChallenge({
       phone: "13800138000",
