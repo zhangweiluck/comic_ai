@@ -5,12 +5,15 @@ import {
   confirmAssetCandidate,
   createAssetReviewState,
   type AssetReviewState,
+  updateAssetCandidateLabel,
 } from "./asset-review.service.ts";
 import { InMemoryAssetStore } from "./asset.service.ts";
 import {
   createCalibrationSession,
   markCalibrationItemReviewed,
+  overrideCalibrationSession,
   passCalibrationSession,
+  skipCalibrationSession,
   type CalibrationSessionRecord,
 } from "./calibration.service.ts";
 import { buildExportManifest, type ExportManifest } from "./export-manifest.service.ts";
@@ -44,6 +47,7 @@ export interface CreatorDevStateSnapshot {
   project: ProjectBundle["project"] | null;
   script: ProjectBundle["script"] | null;
   assetReview: ReturnType<typeof computeAssetReviewSummary> | null;
+  assetCandidates: AssetReviewState | null;
   calibration: CalibrationSessionRecord | null;
   shots: CreatorShotView[];
   exportPreview: ExportManifest | null;
@@ -162,25 +166,39 @@ export class CreatorDevApp {
     }
 
     this.activeAssetReview = next;
-    return { assetReview: computeAssetReviewSummary(next) };
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
+  }
+
+  confirmAsset(input: {
+    group: "character" | "scene" | "prop";
+    assetKey: string;
+  }) {
+    const next = confirmAssetCandidate(this.requireAssetReview(), input);
+    this.activeAssetReview = next;
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
+  }
+
+  updateAssetLabel(input: {
+    group: "character" | "scene" | "prop";
+    assetKey: string;
+    label: string;
+  }) {
+    const next = updateAssetCandidateLabel(this.requireAssetReview(), input);
+    this.activeAssetReview = next;
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
   }
 
   async runCalibration() {
-    const shots = await this.listShots();
-    let calibration = createCalibrationSession({
-      organizationId: "dev-org",
-      projectId: this.requireBundle().project.id,
-      shotIds: shots.slice(0, 3).map((shot) => shot.id),
-      createdByUserId: "dev-user",
-    });
-
-    for (const item of calibration.items) {
-      calibration = markCalibrationItemReviewed(calibration, {
-        shotId: item.shotId,
-        qualityReviewResult: "passed",
-      });
-    }
-
+    let calibration = await this.createReviewedCalibrationSession();
     calibration = passCalibrationSession(calibration, {
       decidedByUserId: "dev-user",
     });
@@ -189,13 +207,54 @@ export class CreatorDevApp {
     return { calibration };
   }
 
+  async skipCalibration(input: { reason: string }) {
+    let calibration = await this.createReviewedCalibrationSession();
+    calibration = skipCalibrationSession(calibration, {
+      decidedByUserId: "dev-user",
+      reason: input.reason,
+    });
+
+    this.activeCalibration = calibration;
+    return { calibration };
+  }
+
+  async overrideCalibration(input: { reason?: string | null }) {
+    let calibration = await this.createReviewedCalibrationSession({
+      failedShotIndex: 0,
+    });
+    calibration = overrideCalibrationSession(calibration, {
+      decidedByUserId: "dev-user",
+      reason: input.reason ?? null,
+    });
+
+    this.activeCalibration = calibration;
+    return { calibration };
+  }
+
   async generateImages() {
     const shots = await this.listShots();
+    const bindings = shots.map((shot, index) => ({
+      shotId: shot.id,
+      taskId: `image-task-${index + 1}`,
+      storageObjectKey: `generated/${shot.id}.png`,
+      sourceAttemptId: randomUUID(),
+    }));
+    return this.generateImagesForTasks(bindings);
+  }
+
+  async generateImagesForTasks(
+    bindings: Array<{
+      shotId: string;
+      taskId: string;
+      storageObjectKey: string;
+      sourceAttemptId: string;
+    }>,
+  ) {
     const started = await startShotImageGenerationBatch(this.shotStore, {
       calibration: this.requireCalibration(),
-      requests: shots.map((shot, index) => ({
-        shotId: shot.id,
-        taskId: `image-task-${index + 1}`,
+      requests: bindings.map((binding) => ({
+        shotId: binding.shotId,
+        taskId: binding.taskId,
       })),
     });
 
@@ -203,19 +262,26 @@ export class CreatorDevApp {
       organizationId: "dev-org",
       projectId: this.requireBundle().project.id,
       createdByUserId: "dev-user",
-      results: started.map((shot, index) => ({
-        shotId: shot.id,
-        taskId: `image-task-${index + 1}`,
-        requestedContentRevision: shot.activeImageRevision ?? 1,
-        status: "succeeded" as const,
-        storageObjectKey: `generated/${shot.id}.png`,
-        metadata: {
-          mimeType: "image/png",
-          width: 720,
-          height: 1280,
-        },
-        sourceAttemptId: randomUUID(),
-      })),
+      results: started.map((shot) => {
+        const binding = bindings.find((candidate) => candidate.shotId === shot.id);
+        if (!binding) {
+          throw new Error(`creator_image_binding_missing:${shot.id}`);
+        }
+
+        return {
+          shotId: shot.id,
+          taskId: binding.taskId,
+          requestedContentRevision: shot.activeImageRevision ?? 1,
+          status: "succeeded" as const,
+          storageObjectKey: binding.storageObjectKey,
+          metadata: {
+            mimeType: "image/png",
+            width: 720,
+            height: 1280,
+          },
+          sourceAttemptId: binding.sourceAttemptId,
+        };
+      }),
     });
 
     this.exportPreview = null;
@@ -227,35 +293,57 @@ export class CreatorDevApp {
 
   async generateVideos() {
     const shots = await this.listShots();
+    const bindings = shots.map((shot, index) => ({
+      shotId: shot.id,
+      taskId: `video-task-${index + 1}`,
+      storageObjectKey: `generated/${shot.id}.mp4`,
+      sourceAttemptId: randomUUID(),
+    }));
+    return this.generateVideosForTasks(bindings);
+  }
+
+  async generateVideosForTasks(
+    bindings: Array<{
+      shotId: string;
+      taskId: string;
+      storageObjectKey: string;
+      sourceAttemptId: string;
+    }>,
+  ) {
     const started = [];
 
-    for (let index = 0; index < shots.length; index += 1) {
+    for (const binding of bindings) {
       started.push(
         await startShotVideoGeneration(this.shotStore, {
-          shotId: shots[index]!.id,
-          taskId: `video-task-${index + 1}`,
+          shotId: binding.shotId,
+          taskId: binding.taskId,
         }),
       );
     }
 
     const results = [];
-    for (let index = 0; index < started.length; index += 1) {
+    for (const shot of started) {
+      const binding = bindings.find((candidate) => candidate.shotId === shot.id);
+      if (!binding) {
+        throw new Error(`creator_video_binding_missing:${shot.id}`);
+      }
+
       results.push(
         await finalizeShotVideoGeneration(this.assetStore, this.shotStore, {
           organizationId: "dev-org",
           projectId: this.requireBundle().project.id,
           createdByUserId: "dev-user",
-          shotId: started[index]!.id,
-          taskId: `video-task-${index + 1}`,
-          requestedImageAssetVersionId: started[index]!.currentImageAssetVersionId ?? "",
+          shotId: shot.id,
+          taskId: binding.taskId,
+          requestedImageAssetVersionId: shot.currentImageAssetVersionId ?? "",
           status: "succeeded",
-          storageObjectKey: `generated/${started[index]!.id}.mp4`,
+          storageObjectKey: binding.storageObjectKey,
           metadata: {
             mimeType: "video/mp4",
             width: 720,
             height: 1280,
           },
-          sourceAttemptId: randomUUID(),
+          sourceAttemptId: binding.sourceAttemptId,
         }),
       );
     }
@@ -286,6 +374,7 @@ export class CreatorDevApp {
       assetReview: this.activeAssetReview
         ? computeAssetReviewSummary(this.activeAssetReview)
         : null,
+      assetCandidates: this.activeAssetReview,
       calibration: this.activeCalibration,
       shots: await this.listShots(),
       exportPreview: this.exportPreview,
@@ -332,5 +421,25 @@ export class CreatorDevApp {
       throw new Error("creator_calibration_missing");
     }
     return this.activeCalibration;
+  }
+
+  private async createReviewedCalibrationSession(input?: { failedShotIndex?: number }) {
+    const shots = await this.listShots();
+    let calibration = createCalibrationSession({
+      organizationId: "dev-org",
+      projectId: this.requireBundle().project.id,
+      shotIds: shots.slice(0, 3).map((shot) => shot.id),
+      createdByUserId: "dev-user",
+    });
+
+    for (const [index, item] of calibration.items.entries()) {
+      calibration = markCalibrationItemReviewed(calibration, {
+        shotId: item.shotId,
+        qualityReviewResult:
+          input?.failedShotIndex === index ? "failed" : "passed",
+      });
+    }
+
+    return calibration;
   }
 }

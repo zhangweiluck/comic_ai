@@ -148,6 +148,25 @@ export function skipCalibrationSession(
   });
 }
 
+export function overrideCalibrationSession(
+  session: CalibrationSessionRecord,
+  input: {
+    decidedByUserId: string;
+    reason?: string | null;
+  },
+): CalibrationSessionRecord {
+  if (session.status === "generating") {
+    throw new CalibrationRuleError("calibration_not_ready");
+  }
+
+  const reason = input.reason?.trim();
+  return applyCalibrationDecision(session, {
+    decisionType: "override",
+    decidedByUserId: input.decidedByUserId,
+    reason: reason && reason.length > 0 ? reason : null,
+  });
+}
+
 function assertThreeUniqueShots(shotIds: string[]) {
   if (shotIds.length !== 3 || new Set(shotIds).size !== 3) {
     throw new CalibrationRuleError("invalid_calibration_selection");

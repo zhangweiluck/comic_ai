@@ -13,6 +13,8 @@ describe("asset schema assumptions", () => {
     );
 
     assert.match(sql, /CREATE TABLE assets \(/);
+    assert.match(sql, /CREATE TABLE asset_review_candidates \(/);
+    assert.match(sql, /candidate_group text NOT NULL CHECK \(candidate_group IN \('character', 'scene', 'prop'\)\)/);
     assert.match(sql, /asset_type text NOT NULL CHECK \(asset_type IN \('character_sheet', 'scene_reference', 'prop_reference', 'shot_image', 'shot_video'\)\)/);
     assert.match(sql, /CREATE TABLE asset_versions \(/);
     assert.match(sql, /version_number integer NOT NULL CHECK \(version_number >= 1\)/);

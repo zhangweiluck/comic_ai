@@ -121,6 +121,26 @@ CREATE TABLE scripts (
 CREATE INDEX scripts_project_idx
   ON scripts (organization_id, project_id, created_at DESC);
 
+CREATE TABLE asset_review_candidates (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  project_id uuid NOT NULL REFERENCES projects(id),
+  candidate_group text NOT NULL CHECK (candidate_group IN ('character', 'scene', 'prop')),
+  asset_key text NOT NULL,
+  label text NOT NULL,
+  required boolean NOT NULL DEFAULT true,
+  confirmed boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  UNIQUE (organization_id, project_id, candidate_group, asset_key),
+  FOREIGN KEY (organization_id, project_id)
+    REFERENCES projects (organization_id, id)
+);
+
+CREATE INDEX asset_review_candidates_project_idx
+  ON asset_review_candidates (organization_id, project_id, candidate_group, created_at DESC);
+
 CREATE TABLE assets (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id),
@@ -248,6 +268,7 @@ CREATE TABLE calibration_items (
 
 CREATE INDEX calibration_items_session_idx
   ON calibration_items (organization_id, calibration_session_id);
+
 
 CREATE TABLE idempotency_records (
   id uuid PRIMARY KEY,
@@ -497,6 +518,35 @@ CREATE INDEX provider_requests_repair_idx
 CREATE INDEX provider_requests_task_idx
   ON provider_requests (organization_id, task_id, attempt_id)
   WHERE task_id IS NOT NULL;
+
+CREATE TABLE export_records (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  workspace_id uuid NOT NULL REFERENCES workspaces(id),
+  project_id uuid NOT NULL REFERENCES projects(id),
+  workflow_id uuid NOT NULL REFERENCES workflows(id),
+  storage_object_id uuid NOT NULL REFERENCES storage_objects(id),
+  manifest_status text NOT NULL CHECK (manifest_status IN ('ready', 'partial')),
+  allow_partial_export boolean NOT NULL DEFAULT false,
+  item_count integer NOT NULL CHECK (item_count >= 0),
+  missing_asset_count integer NOT NULL CHECK (missing_asset_count >= 0),
+  latest_signed_url_expires_at timestamptz NOT NULL,
+  created_by_user_id uuid NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, workspace_id)
+    REFERENCES workspaces (organization_id, id),
+  FOREIGN KEY (organization_id, project_id)
+    REFERENCES projects (organization_id, id),
+  FOREIGN KEY (organization_id, workflow_id)
+    REFERENCES workflows (organization_id, id),
+  FOREIGN KEY (organization_id, storage_object_id)
+    REFERENCES storage_objects (organization_id, id)
+);
+
+CREATE INDEX export_records_project_idx
+  ON export_records (organization_id, project_id, created_at DESC);
 
 CREATE TABLE credit_reservations (
   id uuid PRIMARY KEY,

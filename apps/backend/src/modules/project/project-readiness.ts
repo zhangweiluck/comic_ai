@@ -93,29 +93,33 @@ export const creatorDomainBlockers: CreatorDomainBlocker[] = [
     id: "a2-actor-context",
     dependency: "A2 ActorContext and tenant-safe capability checks",
     blocks: ["B1 CreateProject production command", "B5 Public Asset confirm"],
-    status: "open",
-    notes: "B can draft tests and fixtures now, but cannot bypass capability checks.",
+    status: "ready",
+    notes:
+      "Resolved by the SQL-backed creator commands and authenticated application flow. Capability checks now gate create-project, parse-script, asset confirmation, generation, and export paths.",
   },
   {
     id: "a3-audit",
     dependency: "A3 append-only audit helper",
     blocks: ["B1 CreateProject audit writes", "B6 Calibration skip/pass audit"],
-    status: "open",
-    notes: "Sensitive creator commands need durable audit records before shipping.",
+    status: "ready",
+    notes:
+      "Resolved for the implemented creator loop. Durable audit records are written for project creation and calibration pass/skip/override flows.",
   },
   {
     id: "a4-workflow-task",
     dependency: "A4 durable workflow/task execution spine",
     blocks: ["B2 ParseScript workflow", "B7 GenerateShotImage", "B9 CreateExport"],
-    status: "open",
-    notes: "No local fake task state is allowed for long-running creator jobs.",
+    status: "ready",
+    notes:
+      "Resolved by SQL-backed workflow/task integration. ParseScript, image generation, video generation, and export all create durable workflow/task records.",
   },
   {
     id: "creator-domain-schema",
     dependency: "project/script/asset/shot migrations",
     blocks: ["B1 CreateProject writes", "B3 AssetVersion persistence"],
-    status: "open",
-    notes: "Foundation SQL currently stops at workflows/tasks and lacks creator tables.",
+    status: "ready",
+    notes:
+      "Resolved by the foundation migration. projects, scripts, asset_review_candidates, assets, asset_versions, shots, calibration_sessions, calibration_items, and export_records are present in SQL.",
   },
 ];
 
