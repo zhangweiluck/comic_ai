@@ -167,7 +167,14 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
 
       sqlState.projectId = result.body.project.id;
       sqlState.scriptId = result.body.script.id;
-      await creatorApp.createProject(input.body);
+      const bundle = await loadProjectBundleFromSql(deps.db, {
+        projectId: result.body.project.id,
+        scriptId: result.body.script.id,
+      });
+      await creatorApp.createProject({
+        ...input.body,
+        seedBundle: bundle ?? undefined,
+      });
 
       return {
         status: result.status,

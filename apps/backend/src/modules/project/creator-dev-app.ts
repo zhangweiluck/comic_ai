@@ -27,7 +27,7 @@ import {
   finalizeShotImageGenerationBatch,
   startShotImageGenerationBatch,
 } from "./shot-image-generation.service.ts";
-import { createShotDraft, InMemoryShotStore } from "./shot.service.ts";
+import { createShotDraft, InMemoryShotStore, type ShotRecord } from "./shot.service.ts";
 import {
   finalizeShotVideoGeneration,
   startShotVideoGeneration,
@@ -69,7 +69,17 @@ export class CreatorDevApp {
     scriptInput: string;
     aspectRatio: string;
     resolution: string;
+    seedBundle?: ProjectBundle;
   }) {
+    if (input.seedBundle) {
+      this.activeBundle = input.seedBundle;
+      this.activeAssetReview = null;
+      this.activeCalibration = null;
+      this.shotIds = [];
+      this.exportPreview = null;
+      return input.seedBundle;
+    }
+
     this.requestCounter += 1;
     const created = await createProjectDraft(this.projectStore, {
       organizationId: "dev-org",
@@ -138,7 +148,7 @@ export class CreatorDevApp {
     return {
       parse: parsed,
       assetReview: computeAssetReviewSummary(this.activeAssetReview),
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
@@ -200,7 +210,7 @@ export class CreatorDevApp {
   async runCalibration() {
     let calibration = await this.createReviewedCalibrationSession();
     calibration = passCalibrationSession(calibration, {
-      decidedByUserId: "dev-user",
+      decidedByUserId: this.requireBundle().project.createdByUserId,
     });
 
     this.activeCalibration = calibration;
@@ -210,7 +220,7 @@ export class CreatorDevApp {
   async skipCalibration(input: { reason: string }) {
     let calibration = await this.createReviewedCalibrationSession();
     calibration = skipCalibrationSession(calibration, {
-      decidedByUserId: "dev-user",
+      decidedByUserId: this.requireBundle().project.createdByUserId,
       reason: input.reason,
     });
 
@@ -223,7 +233,7 @@ export class CreatorDevApp {
       failedShotIndex: 0,
     });
     calibration = overrideCalibrationSession(calibration, {
-      decidedByUserId: "dev-user",
+      decidedByUserId: this.requireBundle().project.createdByUserId,
       reason: input.reason ?? null,
     });
 
@@ -259,9 +269,9 @@ export class CreatorDevApp {
     });
 
     const results = await finalizeShotImageGenerationBatch(this.assetStore, this.shotStore, {
-      organizationId: "dev-org",
+      organizationId: this.requireBundle().project.organizationId,
       projectId: this.requireBundle().project.id,
-      createdByUserId: "dev-user",
+      createdByUserId: this.requireBundle().project.createdByUserId,
       results: started.map((shot) => {
         const binding = bindings.find((candidate) => candidate.shotId === shot.id);
         if (!binding) {
@@ -287,7 +297,7 @@ export class CreatorDevApp {
     this.exportPreview = null;
     return {
       ...results,
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
@@ -330,9 +340,9 @@ export class CreatorDevApp {
 
       results.push(
         await finalizeShotVideoGeneration(this.assetStore, this.shotStore, {
-          organizationId: "dev-org",
+          organizationId: this.requireBundle().project.organizationId,
           projectId: this.requireBundle().project.id,
-          createdByUserId: "dev-user",
+          createdByUserId: this.requireBundle().project.createdByUserId,
           shotId: shot.id,
           taskId: binding.taskId,
           requestedImageAssetVersionId: shot.currentImageAssetVersionId ?? "",
@@ -350,7 +360,7 @@ export class CreatorDevApp {
 
     return {
       results,
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
@@ -382,22 +392,26 @@ export class CreatorDevApp {
   }
 
   private async listShots(): Promise<CreatorShotView[]> {
-    const shots: CreatorShotView[] = [];
+    const shotRecords = await this.listShotRecords();
+    return shotRecords.map((shot) => ({
+      id: shot.id,
+      title: shot.title,
+      contentRevision: shot.contentRevision,
+      imageStatus: shot.imageStatus,
+      videoStatus: shot.videoStatus,
+      currentImageAssetVersionId: shot.currentImageAssetVersionId,
+      currentVideoAssetVersionId: shot.currentVideoAssetVersionId,
+    }));
+  }
+
+  private async listShotRecords(): Promise<ShotRecord[]> {
+    const shots: ShotRecord[] = [];
     for (const shotId of this.shotIds) {
       const shot = await this.shotStore.findShot(shotId);
       if (!shot) {
         continue;
       }
-
-      shots.push({
-        id: shot.id,
-        title: shot.title,
-        contentRevision: shot.contentRevision,
-        imageStatus: shot.imageStatus,
-        videoStatus: shot.videoStatus,
-        currentImageAssetVersionId: shot.currentImageAssetVersionId,
-        currentVideoAssetVersionId: shot.currentVideoAssetVersionId,
-      });
+      shots.push(shot);
     }
     return shots;
   }
@@ -426,10 +440,10 @@ export class CreatorDevApp {
   private async createReviewedCalibrationSession(input?: { failedShotIndex?: number }) {
     const shots = await this.listShots();
     let calibration = createCalibrationSession({
-      organizationId: "dev-org",
+      organizationId: this.requireBundle().project.organizationId,
       projectId: this.requireBundle().project.id,
       shotIds: shots.slice(0, 3).map((shot) => shot.id),
-      createdByUserId: "dev-user",
+      createdByUserId: this.requireBundle().project.createdByUserId,
     });
 
     for (const [index, item] of calibration.items.entries()) {

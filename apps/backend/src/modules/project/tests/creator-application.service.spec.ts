@@ -423,6 +423,134 @@ describe("creator application service", { concurrency: false }, () => {
       await db.close();
     }
   });
+
+  it("runs the creator flow with runtime provider and storage overrides", async () => {
+    const db = await createMigratedTestDb();
+    const originalEnv = {
+      MODEL_PROVIDER_MODE: process.env.MODEL_PROVIDER_MODE,
+      MODEL_PROVIDER_ENDPOINT: process.env.MODEL_PROVIDER_ENDPOINT,
+      MODEL_PROVIDER_NAME: process.env.MODEL_PROVIDER_NAME,
+      STORAGE_ADAPTER_MODE: process.env.STORAGE_ADAPTER_MODE,
+      STORAGE_PUBLIC_BASE_URL: process.env.STORAGE_PUBLIC_BASE_URL,
+      STORAGE_BUCKET: process.env.STORAGE_BUCKET,
+    };
+    const originalFetch = globalThis.fetch;
+
+    try {
+      process.env.MODEL_PROVIDER_MODE = "http";
+      process.env.MODEL_PROVIDER_ENDPOINT = "https://provider.example.test";
+      process.env.MODEL_PROVIDER_NAME = "provider-http-smoke";
+      process.env.STORAGE_ADAPTER_MODE = "public_base_url";
+      process.env.STORAGE_PUBLIC_BASE_URL = "https://cdn.example.test/assets";
+      process.env.STORAGE_BUCKET = "creator-smoke";
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            externalRequestId: "provider-request-smoke",
+            status: "accepted",
+            redactedResponse: { accepted: true },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        )) as typeof fetch;
+
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-runtime-overrides");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      await creator.createProject({
+        user,
+        body: {
+          name: "Creator runtime overrides",
+          scriptInput: "Episode 6: Runtime adapters must hold through the full creator flow.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-runtime-overrides-create",
+        now: new Date("2026-05-18T15:00:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-runtime-overrides-parse",
+        now: new Date("2026-05-18T15:01:00.000Z"),
+      });
+      await creator.confirmAllAssets({ user });
+      await creator.runCalibration({
+        user,
+        now: new Date("2026-05-18T15:02:00.000Z"),
+      });
+      await creator.generateImages({
+        user,
+        now: new Date("2026-05-18T15:03:00.000Z"),
+      });
+      await creator.generateVideos({
+        user,
+        now: new Date("2026-05-18T15:03:30.000Z"),
+      });
+      const exportPreview = await creator.previewExport({
+        user,
+        now: new Date("2026-05-18T15:04:00.000Z"),
+      });
+
+      const providerRequests = await db.query<{
+        provider_name: string;
+      }>(
+        `
+          SELECT provider_name
+          FROM provider_requests
+          ORDER BY created_at ASC
+        `,
+      );
+      const storageObjects = await db.query<{
+        bucket: string;
+      }>(
+        `
+          SELECT bucket
+          FROM storage_objects
+          ORDER BY created_at ASC
+        `,
+      );
+
+      assert.equal(exportPreview.status, 200);
+      assert.equal(
+        exportPreview.body.exportRecord?.manifestStatus,
+        "ready",
+      );
+      assert.match(
+        exportPreview.body.platform?.signedUrl ?? "",
+        /^https:\/\/cdn\.example\.test\/assets\//,
+      );
+      assert.equal(providerRequests.rows.length > 0, true);
+      assert.equal(
+        providerRequests.rows.every((row) => row.provider_name === "provider-http-smoke"),
+        true,
+      );
+      assert.equal(storageObjects.rows.length > 0, true);
+      assert.equal(
+        storageObjects.rows.every((row) => row.bucket === "creator-smoke"),
+        true,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const [key, value] of Object.entries(originalEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+      await db.close();
+    }
+  });
 });
 
 async function seedTenant(

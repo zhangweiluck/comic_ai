@@ -8,6 +8,8 @@ Owner: Developer B
 
 `B0` is complete.
 
+As of 2026-05-19, the broader Developer B creator-domain module (`B0-B9`) is also complete in-repo. The remaining work is no longer creator-domain implementation. It is release management and optional external-environment acceptance.
+
 The original purpose of this readiness document was to let Developer B prepare contracts, fixtures, and blocker tracking before the platform gates existed. That preparation work landed, and the creator-domain implementation has now moved well past the original B0 boundary.
 
 ## What Landed
@@ -34,8 +36,24 @@ The original purpose of this readiness document was to let Developer B prepare c
 
 - Keep the plan and readiness docs in sync with landed code so they do not drift back to pre-implementation assumptions.
 - Organize the remaining creator-domain workspace changes into intentional commits.
-- Expand verification beyond module tests into release hardening: real provider/storage adapter checks, cross-module integration, and pre-release regression.
-- Treat the remaining work as implementation hardening and release management, not B0 readiness.
+- Treat any future real vendor-account checks as external acceptance, not as an in-repo blocker for Developer B implementation completeness.
+
+## Verification Evidence
+
+Fresh 2026-05-19 verification covered:
+
+- `npm test -- apps/backend/src/modules/project/tests`
+- `npm test -- apps/backend/src/modules/project/tests/creator-application.service.spec.ts`
+- `npm test -- apps/backend/src/entrypoints/tests/phone-auth-dev-server.spec.ts`
+- `npm test -- apps/web/tests`
+
+The creator-domain integration coverage now includes:
+
+- Full creator flow through create -> parse -> asset confirm -> calibration -> image generation -> video generation -> export
+- Durable workflow/task and SQL-backed state finalization
+- Calibration audit persistence
+- Export record/history persistence
+- Runtime provider/storage override coverage through the formal creator application layer
 
 ## Hand-off Assets In Code
 
