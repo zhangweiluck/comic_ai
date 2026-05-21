@@ -16,13 +16,19 @@ describe("login page shell", () => {
 
     assert.match(html, /Comic AI Studio/);
     assert.match(html, /id="creator-app"/);
-    assert.match(html, /create-project-button/);
-    assert.match(html, /parse-script-button/);
-    assert.match(html, /confirm-assets-button/);
-    assert.match(html, /run-calibration-button/);
-    assert.match(html, /generate-images-button/);
-    assert.match(html, /generate-videos-button/);
-    assert.match(html, /preview-export-button/);
+    assert.match(html, /production-workbench\.css/);
+  });
+
+  it("renders production workbench controls and Chinese copy", async () => {
+    const js = await readFile(
+      new URL("../src/features/production-workbench/index.js", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(js, /set-nav-tab/);
+    assert.match(js, /home: "首页"/);
+    assert.match(js, /script: "剧本"/);
+    assert.match(js, /project: "项目"/);
   });
 });
 
@@ -39,7 +45,10 @@ describe("login page client flow", () => {
   });
 
   it("wires the creator workspace to the mock creator APIs", async () => {
-    const js = await readFile(new URL("../app.js", import.meta.url), "utf8");
+    const js = await readFile(
+      new URL("../src/shared/creator-api.js", import.meta.url),
+      "utf8",
+    );
 
     assert.match(js, /\/api\/creator\/project\/create/);
     assert.match(js, /\/api\/creator\/parse/);
