@@ -1,126 +1,224 @@
-这份 `design.md` 旨在为你的 AI 漫剧平台提供一套完整的视觉与交互规范。方案二的核心在于“混沌中孕育秩序”，通过流体动力学与极简主义 UI 的冲突，营造出一种电影级的深邃感。
+## Overview
 
----
+xAI is Elon Musk's frontier-AI lab and the website wears that posture with engineered restraint: a near-black canvas `{colors.canvas}` (`#0a0a0a`) edge-to-edge, white outline pills as every interactive element, and a single proprietary geometric sans `Universal Sans` carrying every display headline at weight 400. There is no gradient hero, no atmospheric backdrop, no product screenshot. The brand reads as confidently sparse — a research lab announcing its work rather than a SaaS marketing site.
 
-# Design System: Cinematic Generative Void (v1.0)
+Type is the second decisive voice. `Universal Sans` carries every display at weight 400 (regular) with aggressive negative tracking (`-2.4 px` at 96 px, scaling down through the display ladder). For technical labels, eyebrows, and metric counters, the brand pairs `Geist Mono` (uppercase, 1.4 px positive tracking) — every section eyebrow reads as a code comment more than a marketing label.
 
-## 1. 设计哲学 (Design Philosophy)
+Every interactive element is a pill (`{rounded.pill}` 9999 px) with 1 px white-translucent border `rgba(255, 255, 255, 0.25)`. The button shape never varies — the same translucent-white pill carries "Try Grok", "Read announcement", "Custom Voices", "Sign up now", and every "Read" anchor. The pill is the entire shape system.
 
-* **叙事性 (Narrativity)**：背景不仅仅是装饰，它是 AI 创作过程的视觉化（线条、色彩、分镜的涌现）。
-* **深邃感 (Atmospheric Depth)**：通过多层级模糊和环境光（Ambient Glow）拉开 Z 轴空间。
-* **精密感 (Precision)**：UI 控件保持绝对的物理锐度，与流动的背景形成强烈对比。
+**Key Characteristics:**
+- A single near-black canvas (`{colors.canvas}` `#0a0a0a`) with white outline pills as the entire interactive vocabulary.
+- Universal Sans weight 400 for display, Geist Mono uppercase tracked for labels — the two-face contrast IS the brand voice.
+- Every button is a `{rounded.pill}` outline with translucent-white border. The brand never uses filled CTAs except for one variant (white-filled pill on Sign Up).
+- Cards are tight `{rounded.sm}` 8 px rectangles in a slightly-lighter `{colors.canvas-card}` (`#191919`) fill with hairline border. No shadows.
+- A muted accent palette of sunset-orange / dusk-purple / twilight-violet / breeze-blue lives in the design tokens but appears rarely on the main marketing surface — reserved for product illustrations / icons.
+- Massive negative letter-spacing on display headlines (`-2.4 px` at 96 px) gives the typography a precise, gathered look.
 
----
+## Colors
 
-## 2. 色彩系统 (Color Palette)
+### Brand & Accent
+- **White** (`{colors.primary}` — `#ffffff`): The brand's primary "color" — used as button outline, button-primary fill, all display text. The brand's signature is white-on-near-black.
+- **Sunset Orange** (`{colors.accent-sunset}` — `#ff7a17`): A warm orange used inside product illustrations and accent moments.
+- **Sunset Soft** (`{colors.accent-sunset-soft}` — `#ffc285`): The lighter variant of the sunset accent.
+- **Dusk Purple** (`{colors.accent-dusk}` — `#7c3aed`): Deep purple used inside product illustrations.
+- **Twilight** (`{colors.accent-twilight}` — `#c4b5fd`): Soft violet — illustrative accent.
+- **Breeze Blue** (`{colors.accent-breeze}` — `#a0c3ec`): Soft blue — illustrative accent.
+- **Midnight** (`{colors.accent-midnight}` — `#0d1726`): Deep blue-black for illustrative backgrounds.
 
-### 2.1 核心色值
+### Surface
+- **Canvas** (`{colors.canvas}` — `#0a0a0a`): The default near-black page background. The brand's only true surface.
+- **Canvas Soft** (`{colors.canvas-soft}` — `#1a1c20`): A slightly lighter dark fill used for hovered nav items and tooltips.
+- **Canvas Card** (`{colors.canvas-card}` — `#191919`): The charcoal card fill used inside product-feature cards.
+- **Canvas Mid** (`{colors.canvas-mid}` — `#363a3f`): A mid-dark used for nested surfaces and code mockup backgrounds.
+- **Hairline** (`{colors.hairline}` — `#212327`): 1 px solid dividers on dark surfaces.
 
-| 类别 | 变量名 | 色值 (HEX) | 描述 |
-| --- | --- | --- | --- |
-| **基础底色** | `@bg-void` | `#020205` | 极深暗调，接近黑洞的颜色 |
-| **流体主色 A** | `@fluid-indigo` | `#1A1B4B` | 沉稳的藏青，代表算法的逻辑 |
-| **流体主色 B** | `@fluid-purple` | `#2D1B4E` | 艺术性的深紫，代表漫剧的幻想 |
-| **环境光阴影** | `@glow-tint` | `#6366F1` | 悬浮容器下方的漫反射光，透明度 15%-25% |
-| **高亮描边** | `@border-sharp` | `#FFFFFF` | 容器边缘 0.5px 的锐利高光，透明度 40% |
+### Text
+- **Ink** (`{colors.ink}` — `#ffffff`): Default text on canvas — pure white.
+- **Ink Hover** (`{colors.ink-hover}` — `#fafaf7`): Slightly off-white used for hover states (filtered out per no-hover policy in component specs).
+- **Body** (`{colors.body}` — `#dadbdf`): Secondary body text — supporting copy in lighter weight.
+- **Body Mid / Mute** (`{colors.body-mid}` — `#7d8187`): Mid-emphasis body and mute text — captions, fine print.
 
----
+### Semantic
+The brand doesn't surface a separate semantic palette on the marketing site. Validation cues use the white-on-canvas hierarchy.
 
-## 3. 视觉组件 (Visual Components)
+## Typography
 
-### 3.1 玻璃态容器 (Glassmorphism Card)
+### Font Family
+Two faces ladder the system:
+1. **universalSans** — proprietary geometric sans used for every display, body, button, and link role. Weight 400 only on the marketing surface (the brand's restraint is part of the voice). Negative letter-spacing at display sizes is the visual signature.
+2. **GeistMono** — used for uppercase section eyebrows, label captions, and metric counters. Positive tracking (1.2 – 1.4 px) at 12 – 14 px.
 
-* **材质**：`backdrop-filter: blur(60px) saturate(180%)`。
-* **填充**：`rgba(15, 15, 20, 0.4)`。
-* **边框**：
-* 1px 线性渐变（Top-Left 至 Bottom-Right）。
-* `linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.1) 100%)`。
+### Hierarchy
+
+| Token | Size | Weight | Line Height | Letter Spacing | Use |
+|---|---|---|---|---|---|
+| `{typography.display-xl}` | 96px | 400 | 96px | -2.4px | Maximum hero scale. |
+| `{typography.display-lg}` | 72px | 400 | 72px | -1.8px | Sub-hero displays. |
+| `{typography.display-md}` | 48px | 400 | 48px | -1.2px | Section headlines. |
+| `{typography.display-sm}` | 32px | 400 | 36px | -0.6px | Card-cluster headings. |
+| `{typography.display-xs}` | 20px | 400 | 28px | 0 | Inline displays. |
+| `{typography.body-lg}` | 18px | 400 | 28px | 0 | Lead paragraphs. |
+| `{typography.body-md}` | 16px | 400 | 24px | 0 | Default body. |
+| `{typography.body-sm}` | 14px | 400 | 20px | 0 | Secondary body. |
+| `{typography.caption-mono}` | 14px | 400 | 20px | 1.4px | Section eyebrow (GeistMono uppercase). |
+| `{typography.caption-mono-sm}` | 12px | 400 | 16px | 1.2px | Small mono labels. |
+| `{typography.button-md}` | 14px | 400 | 20px | 0 | Button label. |
+
+### Principles
+- **Weight 400 for everything.** The brand never bolds. Negative tracking + size hierarchy do the emphasis work.
+- **Tight negative tracking on display sizes.** Reverting to neutral tracking loses the precision feel.
+- **GeistMono uppercase for eyebrows.** Tracked positively (1.4 px) to make the mono read as a code comment.
+
+### Note on Font Substitutes
+universalSans is proprietary. Open-source substitutes:
+- **Display + body** — *Inter* weight 400 with `-0.04em` to `-0.02em` letter-spacing at display sizes comes closest. *Geist* is the second-best option.
+- **Mono** — *Geist Mono* is the documented brand companion; *JetBrains Mono* or *IBM Plex Mono* are alternates.
+
+## Layout
+
+### Spacing System
+- **Base unit**: 4 px.
+- **Tokens**: `{spacing.xxs}` 2 px · `{spacing.xs}` 4 px · `{spacing.sm}` 8 px · `{spacing.md}` 12 px · `{spacing.lg}` 16 px · `{spacing.xl}` 24 px · `{spacing.2xl}` 32 px · `{spacing.3xl}` 48 px · `{spacing.4xl}` 64 px.
+- **Section padding**: hero / content bands at `{spacing.4xl}` 64 px on desktop.
+- **Card interior padding**: `{spacing.xl}` 24 px.
+
+### Grid & Container
+- Marketing content centres at ~1200 px.
+- Product / announcement card grid: 2-up at desktop, 1-up at mobile.
+
+### Responsive Strategy
+
+#### Breakpoints
+
+| Name | Width | Key Changes |
+|---|---|---|
+| Mobile | < 768px | Hero scales 96 → 48 px; grids 1-up; hamburger nav. |
+| Desktop | ≥ 768px | Full hero + 2-up grids. |
+
+#### Touch Targets
+Buttons render ~32 – 40 px tall (8 vertical padding + 20 line). Mobile inflates touch area to meet WCAG 44 × 44 px.
+
+#### Image Behavior
+The brand uses sparse SVG illustrations for product moments (Grok, Voice, API). No photography on the marketing surface.
+
+## Elevation & Depth
+
+| Level | Treatment | Use |
+|---|---|---|
+| Level 0 — Flat | No shadow, no border. | Default. |
+| Level 1 — Hairline | 1 px solid `{colors.hairline}` border. | Card chrome, button outlines (with translucent white). |
+
+The brand uses no shadows. Hairline borders carry all elevation cues.
+
+## Shapes
+
+### Border Radius Scale
+
+| Token | Value | Use |
+|---|---|---|
+| `{rounded.none}` | 0px | Full-bleed bands. |
+| `{rounded.sm}` | 8px | Card chrome (the brand's `--radius` value). |
+| `{rounded.pill}` | 9999px | Every button — the brand's universal interactive shape. |
+| `{rounded.full}` | 9999px | Circular icon containers. |
+
+## Components
+
+### Buttons
+
+**`button-primary`** — the rare white-filled pill (used on a single Sign Up CTA).
+- Background `{colors.primary}` white, text `{colors.on-primary}` near-black, 1 px solid white border, label `{typography.button-md}`, padding `{spacing.xs} {spacing.md}`, shape `{rounded.pill}` 9999 px.
+
+**`button-outline-on-dark`** — the canonical white-outline pill, used for every non-primary CTA.
+- Background `{colors.canvas}` (transparent in practice — `rgba(0,0,0,0)`), text `{colors.ink}` white, 1 px solid `{colors.hairline}` border (translucent white at runtime), same typography / padding scale / shape.
+
+**`button-outline-sm`** — the smaller outline pill used in card-cluster CTAs.
+- Same as `button-outline-on-dark` with tighter padding `{spacing.xs} {spacing.md}`.
+
+### Cards & Containers
+
+**`card-content`** — the default content card.
+- Background `{colors.canvas-card}` (`#191919`), text `{colors.ink}`, 1 px solid `{colors.hairline}` border, padding `{spacing.xl}`, shape `{rounded.sm}` 8 px.
+
+**`card-feature-product`** — the product-feature card (Grok / Voice / API).
+- Same chrome as `card-content`. Hosts an SVG illustration + headline + body + outline pill CTA.
+
+### Inputs & Forms
+
+**`text-input`** — the standard text input on dark.
+- Background `{colors.canvas-soft}`, text `{colors.ink}`, 1 px solid `{colors.hairline}`, body in `{typography.body-md}`, padding `{spacing.md} {spacing.lg}`, shape `{rounded.sm}` 8 px.
+
+### Navigation
+
+**`nav-bar`** — the sticky top nav.
+- Background `{colors.canvas}`, text `{colors.ink}`, padding `{spacing.md} {spacing.xl}`.
+
+**`nav-link`** — link items inside nav.
+- Text `{colors.ink}`, set in `{typography.body-sm}`.
+
+**`footer`** — the footer band.
+- Background `{colors.canvas}`, text `{colors.body}`, padding `{spacing.3xl} {spacing.xl}`. Body in `{typography.body-sm}`.
+
+### Signature Components
+
+**`hero-band`** — the dark hero with massive display headline.
+- Background `{colors.canvas}`, text `{colors.ink}`, padding `{spacing.4xl} {spacing.xl}`. Headline in `{typography.display-xl}` (96 px weight 400 with `-2.4 px` tracking).
+
+**`content-band`** — the standard content section.
+- Background `{colors.canvas}`, text `{colors.ink}`, padding `{spacing.4xl} {spacing.xl}`. Section headline in `{typography.display-md}` preceded by a `{typography.caption-mono}` UPPERCASE GeistMono eyebrow.
+
+**`eyebrow-mono`** — the uppercase tracked GeistMono label above every section headline.
+- Text `{colors.ink}`, set in `{typography.caption-mono}`. The brand's signature label style.
+
+**`divider-hairline`** — the 1 px line between section bands.
+- 1 px solid `{colors.hairline}`.
+
+### Examples (illustrative)
+
+> Auto-derived kit-mirror demonstration surfaces (`scripts/derive-examples-block.mjs`). Each `ex-*` entry references brand-native primitives so downstream consumers (`/preview-design`, `/generate-kit`) re-skin the same 10 surfaces consistently. `TO_FILL` markers indicate missing primitives — resolve in the LLM judgment pass.
+
+**`ex-pricing-tier`** — Default Pricing tier card. Re-uses feature-card chrome with brand canvas-soft surface.
+- Properties: `backgroundColor`, `textColor`, `borderColor`, `rounded`, `padding`
+
+**`ex-pricing-tier-featured`** — Featured/highlighted tier — polarity-flipped surface (dark fill + light text in light mode, light fill + dark text in dark mode).
+- Properties: `backgroundColor`, `textColor`, `rounded`, `padding`
+
+**`ex-product-selector`** — What's Included summary card — re-purposed for SaaS / B2B verticals (NOT a literal product gallery).
+- Properties: `backgroundColor`, `rounded`, `padding`
+
+**`ex-cart-drawer`** — Subscription summary — re-purposed for SaaS / B2B (line items per add-on, not literal cart).
+- Properties: `backgroundColor`, `rounded`, `padding`, `item-divider`
+
+**`ex-app-shell-row`** — Sidebar nav row inside the App Shell example. Active state uses brand primary as the indicator.
+- Properties: `backgroundColor`, `activeIndicator`, `rounded`, `padding`
+
+**`ex-data-table-cell`** — Default data-table th + td chrome. Header uses mono-caps eyebrow typography; body uses body-sm.
+- Properties: `headerBackground`, `headerTypography`, `bodyTypography`, `cellPadding`, `rowBorder`
+
+**`ex-auth-form-card`** — Sign-in / sign-up card. Re-uses feature-card chrome with text-input primitives inside.
+- Properties: `backgroundColor`, `rounded`, `padding`
+
+**`ex-modal-card`** — Modal dialog surface — same chrome as feature-card with elevated shadow.
+- Properties: `backgroundColor`, `rounded`, `padding`
+
+**`ex-empty-state-card`** — Empty-state illustration frame.
+- Properties: `backgroundColor`, `rounded`, `padding`, `captionTypography`
+
+**`ex-toast`** — Toast notification surface — feature-card shape + medium shadow.
+- Properties: `backgroundColor`, `rounded`, `padding`, `typography`
 
 
-* **阴影**：不使用 `box-shadow` 黑影，改用 `drop-shadow(0 0 30px rgba(99, 102, 241, 0.2))`。
+## Do's and Don'ts
 
-### 3.2 交互控件 (Form Elements)
+### Do
+- Reserve `{colors.canvas}` (`#0a0a0a`) as the only page surface. The brand is dark-canvas only.
+- Set hero headlines in `{typography.display-xl}` Universal Sans weight 400 with `-2.4 px` tracking. The precision IS the voice.
+- Use `{rounded.pill}` 9999 px on every interactive element. The pill is the brand.
+- Pair Universal Sans (sentence-case) with GeistMono UPPERCASE (eyebrows, labels, metric counters).
+- Use white-translucent borders for outline buttons — the brand never uses solid white borders on its outline pill.
 
-* **输入框 (Input)**：
-* 背景：`rgba(255, 255, 255, 0.03)`。
-* 动效：Focus 时，底部边框由中心向两侧伸展，伴随极其微弱的 `indigo` 辉光。
-
-
-* **主按钮 (Primary Button)**：
-* 风格：实色填充或强烈渐变。
-* 文本：SF Pro Display / Inter, Semibold, Letter Spacing 0.05em。
-* 悬停：产生类似“光波扫描”的过度效果。
-
-
-
----
-
-## 4. 字体系统 (Typography)
-
-* **标题 (Display Text)**：`SF Pro Display` 或 `Inter` (Variable Weight)。
-* *Weight: 200 (Thin) / 600 (Semibold)*。
-
-
-* **正文/标注 (Mono Text)**：`JetBrains Mono` 或 `IBM Plex Mono`。
-* 用于显示 AI 状态码、版本号等微小细节，增加科技感。
-
-
-
----
-
-## 5. 动态系统 (Motion & Interaction)
-
-### 5.1 背景：算法流体 (Algorithmic Fluid)
-
-* **实现方式**：基于 WebGL / GLSL Shader。
-* **逻辑**：使用 **Simplex Noise** 或 **FBM (Fractional Brownian Motion)** 生成。
-* **交互**：鼠标坐标作为引力场点，扰动流体方向。当鼠标悬停在登录框区域时，流体速度放慢，减少干扰。
-
-### 5.2 粒子汇聚 (Particle System)
-
-* **特征**：在登录容器边缘散布极细小的发光粒子（大小 0.5px - 1px）。
-* **行为**：随鼠标轻微漂浮，营造一种“数字尘埃”落入光束的氛围。
-
-### 5.3 登录转场：溶解坍缩 (The Dissolve)
-
-* **触发条件**：`onLoginSuccess`。
-* **过程**：
-1. **UI 坍缩**：登录表单向中心收缩并转化为白色高亮线条。
-2. **像素溶解**：线条断裂成无数微小像素点。
-3. **时空扭曲**：背景流体瞬间加速，向中心汇聚，形成类似“虫洞跳跃”的视觉冲击。
-4. **载入首页**：光芒散去，无缝切入主站分镜界面。
-
-
-
----
-
-## 6. 技术实现参考 (Technical Stack)
-
-* **框架**：Next.js + TypeScript。
-* **动画库**：Framer Motion (用于 UI 动效) + GSAP (用于复杂序列)。
-* **渲染**：`react-three-fiber` 或直接编写自定义 `Canvas` Shader。
-* **图标**：Lucide-react (使用 Stroke 宽度为 1.25px 的细线条)。
-
----
-
-## 7. 页面布局布局参考 (Layout Sketch)
-
-```text
-+---------------------------------------+
-| [Logo: Modular Icon]         [Language] |
-|                                       |
-|          +-----------------+          |
-|          |    Login Box    |          |
-|          | (Glassmorphism) |          |
-|          |      [====]     |          |
-|          |      [====]     |          |
-|          |    [ Submit ]   |          |
-|          +-----------------+          |
-|                                       |
-| [Status: System_Active] [Version: 0.9] |
-+---------------------------------------+
-
-```
-
-> **设计说明**：
-> 保持界面绝对对称，除登录容器外，其余文本（如状态码、版本号）应尽可能靠近屏幕边缘，以突出“中心虚空”的视觉重心。
+### Don't
+- Don't introduce a light-mode counterpart. xAI is dark-canvas only.
+- Don't bold display headlines. Weight 400 is the entire scale.
+- Don't use filled buttons broadly. The brand uses outline pills almost exclusively; one Sign Up white-filled pill is the rare exception.
+- Don't drop a drop-shadow on cards. Hairline borders carry elevation.
+- Don't substitute Universal Sans with a generic geometric sans without adjusting letter-spacing. The negative tracking is part of the brand.
