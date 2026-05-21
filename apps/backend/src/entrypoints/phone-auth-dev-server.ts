@@ -1,22 +1,43 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import type { Server } from "node:http";
+import type { Server, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
+import { maskCnPhone } from "../modules/identity/phone-auth.utils.ts";
 import {
-  createAuthHandlers,
-  createInMemoryAuthContext,
-  type AuthHttpResponse,
-} from "../modules/identity/auth-http.handlers.ts";
+  createPersistentLoginChallenge,
+  findPersistentAuthSessionByToken,
+  revokePersistentAuthSession,
+  verifyPersistentLoginChallenge,
+} from "../modules/identity/persistent-auth.service.ts";
 import { CreatorDevApp } from "../modules/project/creator-dev-app.ts";
+import {
+  createCreatorApplication,
+} from "../modules/project/creator-application.service.ts";
+import { queryOne } from "../modules/shared/db/sql.ts";
+import { createMigratedTestDb } from "../modules/shared/db/test-db.ts";
 
 const webRoot = join(process.cwd(), "apps", "web");
+const devOrganizationId = "10000000-0000-4000-8000-000000000001";
+const devWorkspaceId = "20000000-0000-4000-8000-000000000001";
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
 };
+
+interface AuthHttpResponse<T> {
+  status: number;
+  body: T;
+  cookies?: string[];
+}
+
+interface AuthenticatedUser {
+  id: string;
+  phone: string;
+}
 
 export interface PhoneAuthDevServer {
   origin: string;
@@ -47,7 +68,15 @@ async function readJsonBody(request: AsyncIterable<Buffer | string>): Promise<un
   return body ? JSON.parse(body) : {};
 }
 
-function writeJson(response: import("node:http").ServerResponse, payload: AuthHttpResponse<unknown>) {
+function sessionCookie(token: string): string {
+  return `auth_session=${token}; Path=/; HttpOnly; SameSite=Lax`;
+}
+
+function clearSessionCookie(): string {
+  return "auth_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+}
+
+function writeJson(response: ServerResponse, payload: AuthHttpResponse<unknown>) {
   response.statusCode = payload.status;
   response.setHeader("content-type", "application/json; charset=utf-8");
 
@@ -58,10 +87,7 @@ function writeJson(response: import("node:http").ServerResponse, payload: AuthHt
   response.end(JSON.stringify(payload.body));
 }
 
-async function serveStatic(
-  pathname: string,
-  response: import("node:http").ServerResponse,
-) {
+async function serveStatic(pathname: string, response: ServerResponse) {
   const normalizedPath =
     pathname === "/" ? "/login.html" : pathname === "/login" ? "/login.html" : pathname;
   const filePath = join(webRoot, normalizedPath.replace(/^\/+/, ""));
@@ -75,20 +101,110 @@ async function serveStatic(
   response.end(file);
 }
 
+async function ensureDevWorkspaceAccess(
+  db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+  userId: string,
+) {
+  await db.query(
+    `
+      INSERT INTO organizations (id, name, status)
+      VALUES ($1, 'Comic AI Studio', 'active')
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+    `,
+    [devOrganizationId],
+  );
+  await db.query(
+    `
+      INSERT INTO workspaces (id, organization_id, name, status)
+      VALUES ($1, $2, 'Creator Workspace', 'active')
+      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+    `,
+    [devWorkspaceId, devOrganizationId],
+  );
+  await db.query(
+    `
+      INSERT INTO memberships (id, organization_id, workspace_id, user_id, role, status)
+      VALUES ($1, $2, $3, $4, 'creator', 'active')
+      ON CONFLICT (organization_id, workspace_id, user_id)
+      DO UPDATE SET role = 'creator', status = 'active'
+    `,
+    [randomUUID(), devOrganizationId, devWorkspaceId, userId],
+  );
+}
+
+async function findAuthenticatedUser(
+  db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+  cookieHeader: string | undefined,
+  now: Date,
+): Promise<{ sessionToken: string; user: AuthenticatedUser } | undefined> {
+  const sessionToken = parseCookies(cookieHeader).auth_session;
+  if (!sessionToken) {
+    return undefined;
+  }
+
+  const session = await findPersistentAuthSessionByToken(db, {
+    token: sessionToken,
+    now,
+  });
+  if (!session) {
+    return undefined;
+  }
+
+  const user = await queryOne<{
+    id: string;
+    phone_e164: string;
+    status: "active" | "disabled";
+  }>(db, "SELECT id, phone_e164, status FROM users WHERE id = $1", [session.userId]);
+
+  if (!user || user.status !== "active") {
+    return undefined;
+  }
+
+  return {
+    sessionToken,
+    user: {
+      id: user.id,
+      phone: user.phone_e164,
+    },
+  };
+}
+
 export function createPhoneAuthDevServer(): PhoneAuthDevServer {
-  const authHandlers = createAuthHandlers(createInMemoryAuthContext());
-  const creatorApp = new CreatorDevApp();
+  const dbPromise = createMigratedTestDb();
+  const debugChallengeCodes = new Map<string, string>();
+  const creatorApps = new Map<string, CreatorDevApp>();
+  const creatorSqlStates = new Map<
+    string,
+    { projectId: string | null; scriptId: string | null }
+  >();
   const httpServer = createServer(async (request, response) => {
     try {
+      const db = await dbPromise;
+      const creatorApplication = createCreatorApplication({
+        db,
+        workspaceId: devWorkspaceId,
+        creatorApps,
+        creatorSqlStates,
+      });
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       const pathname = url.pathname;
 
       if (request.method === "POST" && pathname === "/api/auth/code/request") {
         const body = (await readJsonBody(request)) as { phone: string };
-        return writeJson(
-          response,
-          await authHandlers.requestCode({ body, now: new Date() }),
-        );
+        const challenge = await createPersistentLoginChallenge(db, {
+          phone: body.phone,
+          now: new Date(),
+        });
+        debugChallengeCodes.set(challenge.challengeId, challenge.plainCode);
+        return writeJson(response, {
+          status: 200,
+          body: {
+            challengeId: challenge.challengeId,
+            maskedPhone: maskCnPhone(challenge.phoneE164),
+            expiresAt: challenge.expiresAt.toISOString(),
+            retryAfterSeconds: 60,
+          },
+        });
       }
 
       if (request.method === "POST" && pathname === "/api/auth/code/verify") {
@@ -97,30 +213,104 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           phone: string;
           code: string;
         };
-        return writeJson(
-          response,
-          await authHandlers.verifyCode({ body, now: new Date() }),
-        );
+        const verified = await verifyPersistentLoginChallenge(db, {
+          challengeId: body.challengeId,
+          phone: body.phone,
+          code: body.code,
+          now: new Date(),
+        });
+
+        if (verified.kind !== "verified") {
+          const error =
+            verified.kind === "challenge_not_found"
+              ? "challenge_not_found"
+              : verified.kind === "expired"
+                ? "challenge_expired"
+                : verified.kind === "consumed"
+                  ? "challenge_consumed"
+                  : verified.kind === "locked"
+                    ? "verify_locked"
+                    : verified.kind === "phone_mismatch"
+                      ? "invalid_phone"
+                      : verified.kind === "user_disabled"
+                        ? "user_disabled"
+                        : "code_invalid";
+
+          return writeJson(response, {
+            status:
+              error === "challenge_not_found"
+                ? 404
+                : error === "invalid_phone"
+                  ? 400
+                  : error === "user_disabled"
+                    ? 403
+                    : 409,
+            body: { error },
+          });
+        }
+
+        await ensureDevWorkspaceAccess(db, verified.user.id);
+
+        return writeJson(response, {
+          status: 200,
+          body: {
+            user: {
+              id: verified.user.id,
+              phone: verified.user.phone,
+            },
+            session: {
+              id: verified.session.id,
+              expiresAt: verified.session.expiresAt.toISOString(),
+            },
+          },
+          cookies: [sessionCookie(verified.token)],
+        });
       }
 
       if (request.method === "GET" && pathname === "/api/auth/session") {
-        return writeJson(
-          response,
-          await authHandlers.getSession({
-            cookies: parseCookies(request.headers.cookie),
-            now: new Date(),
-          }),
+        const authenticated = await findAuthenticatedUser(
+          db,
+          request.headers.cookie,
+          new Date(),
         );
+        if (!authenticated) {
+          return writeJson(response, {
+            status: 401,
+            body: { error: "unauthenticated" },
+          });
+        }
+
+        const session = await findPersistentAuthSessionByToken(db, {
+          token: authenticated.sessionToken,
+          now: new Date(),
+        });
+        return writeJson(response, {
+          status: 200,
+          body: {
+            authenticated: true,
+            user: authenticated.user,
+            session: {
+              id: session!.id,
+              expiresAt: session!.expiresAt.toISOString(),
+            },
+          },
+        });
       }
 
       if (request.method === "POST" && pathname === "/api/auth/logout") {
-        return writeJson(
-          response,
-          await authHandlers.logout({
-            cookies: parseCookies(request.headers.cookie),
+        const sessionToken = parseCookies(request.headers.cookie).auth_session;
+        if (sessionToken) {
+          await revokePersistentAuthSession(db, {
+            token: sessionToken,
             now: new Date(),
-          }),
-        );
+          });
+        }
+
+        return writeJson(response, {
+          status: 204,
+          body: {},
+          cookies: [clearSessionCookie()],
+        });
       }
 
       if (
@@ -128,74 +318,253 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
         pathname.startsWith("/api/auth/dev/challenges/")
       ) {
         const challengeId = pathname.split("/").at(-1) ?? "";
-        return writeJson(
-          response,
-          await authHandlers.getDevChallenge({
-            params: { challengeId },
-          }),
+        const code = debugChallengeCodes.get(challengeId);
+
+        if (!code) {
+          return writeJson(response, {
+            status: 404,
+            body: { error: "challenge_not_found" },
+          });
+        }
+
+        const challenge = await queryOne<{
+          phone_e164: string;
+          expires_at: Date;
+          status: string;
+        }>(
+          db,
+          `
+            SELECT phone_e164, expires_at, status
+            FROM login_challenges
+            WHERE id = $1
+          `,
+          [challengeId],
         );
-      }
 
-      if (request.method === "GET" && pathname === "/api/creator/state") {
+        if (!challenge) {
+          return writeJson(response, {
+            status: 404,
+            body: { error: "challenge_not_found" },
+          });
+        }
+
         return writeJson(response, {
           status: 200,
-          body: await creatorApp.getState(),
+          body: {
+            challengeId,
+            phone: challenge.phone_e164,
+            code,
+            expiresAt: challenge.expires_at.toISOString(),
+            status: challenge.status,
+          },
         });
       }
 
-      if (request.method === "POST" && pathname === "/api/creator/project/create") {
-        const body = (await readJsonBody(request)) as {
-          name: string;
-          scriptInput: string;
-          aspectRatio: string;
-          resolution: string;
-        };
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.createProject(body),
-        });
-      }
+      if (pathname.startsWith("/api/creator/")) {
+        const authenticated = await findAuthenticatedUser(
+          db,
+          request.headers.cookie,
+          new Date(),
+        );
+        if (!authenticated) {
+          return writeJson(response, {
+            status: 401,
+            body: { error: "unauthenticated" },
+          });
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/parse") {
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.parseScript(),
-        });
-      }
+        if (request.method === "GET" && pathname === "/api/creator/state") {
+          return writeJson(
+            response,
+            await creatorApplication.getState({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+            }),
+          );
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/assets/confirm-all") {
-        return writeJson(response, {
-          status: 200,
-          body: creatorApp.confirmAllAssets(),
-        });
-      }
+        if (request.method === "POST" && pathname === "/api/creator/project/create") {
+          const body = (await readJsonBody(request)) as {
+            name: string;
+            scriptInput: string;
+            aspectRatio: string;
+            resolution: string;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.createProject({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              idempotencyKey: `dev-create-${authenticated.user.id}-${Date.now()}`,
+              now: new Date(),
+            }),
+          );
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/calibration/run") {
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.runCalibration(),
-        });
-      }
+        if (request.method === "POST" && pathname === "/api/creator/parse") {
+          return writeJson(
+            response,
+            await creatorApplication.parseScript({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              idempotencyKey: `dev-parse-${authenticated.user.id}-${Date.now()}`,
+              now: new Date(),
+            }),
+          );
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/images/generate") {
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.generateImages(),
-        });
-      }
+        if (request.method === "POST" && pathname === "/api/creator/assets/confirm-all") {
+          return writeJson(
+            response,
+            await creatorApplication.confirmAllAssets({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+            }),
+          );
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/videos/generate") {
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.generateVideos(),
-        });
-      }
+        if (request.method === "POST" && pathname === "/api/creator/assets/confirm") {
+          const body = (await readJsonBody(request)) as {
+            group: "character" | "scene" | "prop";
+            assetKey: string;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.confirmAsset({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+            }),
+          );
+        }
 
-      if (request.method === "POST" && pathname === "/api/creator/export/preview") {
-        return writeJson(response, {
-          status: 200,
-          body: await creatorApp.previewExport(),
-        });
+        if (request.method === "POST" && pathname === "/api/creator/assets/update-label") {
+          const body = (await readJsonBody(request)) as {
+            group: "character" | "scene" | "prop";
+            assetKey: string;
+            label: string;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.updateAssetLabel({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/calibration/run") {
+          return writeJson(
+            response,
+            await creatorApplication.runCalibration({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/calibration/skip") {
+          const body = (await readJsonBody(request)) as {
+            reason: string;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.skipCalibration({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/calibration/override") {
+          const body = (await readJsonBody(request)) as {
+            reason?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.overrideCalibration({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/images/generate") {
+          return writeJson(
+            response,
+            await creatorApplication.generateImages({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/videos/generate") {
+          return writeJson(
+            response,
+            await creatorApplication.generateVideos({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/export/preview") {
+          return writeJson(
+            response,
+            await creatorApplication.previewExport({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "GET" && pathname === "/api/creator/export/history") {
+          return writeJson(
+            response,
+            await creatorApplication.listExportHistory({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
       }
 
       if (request.method === "GET") {
@@ -232,20 +601,21 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
       this.origin = `http://127.0.0.1:${address.port}`;
     },
     async close() {
-      if (!httpServer.listening) {
-        return;
+      if (httpServer.listening) {
+        await new Promise<void>((resolve, reject) => {
+          httpServer.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve();
+          });
+        });
       }
 
-      await new Promise<void>((resolve, reject) => {
-        httpServer.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
+      const db = await dbPromise;
+      await db.close();
     },
   };
 }

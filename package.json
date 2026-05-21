@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bash scripts/run-tests.sh",
+    "test": "node scripts/run-tests.mjs",
     "dev:phone-auth": "node scripts/run-phone-auth-dev-server.mjs"
   },
   "devDependencies": {

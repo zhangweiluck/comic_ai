@@ -1,9 +1,43 @@
 # 开发者 B 任务包：创作域
 
 > 日期：2026-05-09
+> 回填更新：2026-05-19
 > 负责人：Developer B
 > 角色：创作域负责人
 > 使命：把创作主链路的业务事实做扎实：Project、Script、Asset、Shot、Calibration、Generation、Export。
+
+## 0. 回填结论
+
+截至 2026-05-19，这份计划中的 `B0-B9` 已经不再处于“全部待做”的状态。代码核对后更准确的判断是：`B0-B9` 的主链路均已落地，其中 `B2/B7/B8/B9` 已不应再标记为“只打通半条链路”。当前剩余工作主要是：
+
+- 继续同步计划文档和 readiness 文档，避免状态漂移。
+- 把工作区中的未提交 creator-domain 改动整理进正式提交。
+- 做发布前的扩大验证、真实 provider/storage 适配验证和后续硬化。
+- 将剩余工作明确归类为 release hardening，而不是回到 B0/B1 的前置阻塞阶段。
+
+## 0.1 当前状态总表
+
+| 任务 | 当前状态 | 说明 | 主要证据 |
+| --- | --- | --- | --- |
+| B0 | 已完成 | 契约、fixtures、场景矩阵、blocker 基线已落地 | `project-readiness.ts`，`project-readiness.spec.ts` |
+| B1 | 已完成 | CreateProject 已接入 ActorContext、幂等、审计、SQL，真实写入 project + script | `create-project.command.ts`，`sql-project.command.ts`，`sql-project.command.spec.ts` |
+| B2 | 已完成 | ParseScript 已创建 durable workflow/task，并在 finalization 中落地 asset review candidates、shots、project phase 与 script status | `parse-script.command.ts`，`parse-script.service.ts`，`creator-application.service.ts` |
+| B3 | 已完成 | Asset / AssetVersion 模型和 SQL 快照持久化已落地 | `asset.service.ts`，`asset-version-record.service.ts` |
+| B4 | 已完成 | Shot current 指针保护和 stale 完成保护已落地 | `shot.service.ts`，`shot.service.spec.ts` |
+| B5 | 已完成 | Public Asset 确认、编辑、阻塞项计算已落地 | `asset-review-record.service.ts`，`asset-review.service.ts` |
+| B6 | 已完成 | Calibration pass / skip / override 和审计持久化已落地 | `calibration.service.ts`，`creator-application.service.ts` |
+| B7 | 已完成 | GenerateShotImage 已打通 workflow/task、provider request、storage object、AssetVersion 落地与 shot current pointer 更新 | `shot-image-generation.service.ts`，`creator-platform.service.ts`，`creator-application.service.ts` |
+| B8 | 已完成 | GenerateShotVideo 已打通 current image 前置校验、workflow/task、AssetVersion 落地与 shot current video pointer 更新 | `shot-video-generation.service.ts`，`creator-platform.service.ts`，`creator-application.service.ts` |
+| B9 | 已完成 | Export manifest、导出记录、签名链接、export history 与 export phase 推进已落地 | `export-manifest.service.ts`，`export-record.service.ts`，`creator-platform.service.ts` |
+
+## 0.2 回填后判断
+
+- 这份文档第 1 节中关于 “A2/A3/A4 未就绪前只能做准备工作” 的限制，属于 2026-05-09 当时的正确约束。
+- 到 2026-05-19，这些约束已经不再是主阻塞。它们应被视为历史背景，而不是当前执行状态。
+- 当前的真实风险不是“代码还停留在 B0/B1 准备阶段”，而是：
+- 文档仍混有 2026-05-09 的前置约束描述和 2026-05-19 的已实现状态，容易误导后续开发。
+- creator-domain 改动仍停留在工作区，尚未整理成正式提交。
+- 后续验证重点应转向真实 provider/storage 适配、跨模块集成、发布前回归，而不是继续追问 B2/B7/B8/B9 是否已经打通。
 
 ## 1. B 现在能开始吗？
 
@@ -82,6 +116,12 @@ B 可以立即开始以下工作：
 - Mock 输出必须对 E2E fixtures 具有确定性。
 - 完成时以事务方式写入领域事实。
 
+当前状态 / 下一步动作：
+
+- 当前已具备能力：`ParseScript` 已通过 durable workflow/task 完成 parse finalization，并写入 `asset review candidates`、`shots`、`project phase`、`script status`。
+- 当前证据：creator application 集成测试已覆盖 parse finalization 的 durable facts 写入。
+- 下一步动作：围绕 replay、失败恢复、跨模块 API 使用和发布前回归继续硬化，而不是重复实现 parse finalization。
+
 ## 7. 任务 B3：Asset 和不可变 AssetVersion
 
 | 字段 | 内容 |
@@ -148,6 +188,12 @@ B 可以立即开始以下工作：
 - 将成功结果写入 AssetVersion 和受保护的 current 指针。
 - 失败项必须可见且可重试。
 
+当前状态 / 下一步动作：
+
+- 当前已具备能力：图片生成已经打通 workflow/task、provider request、storage object、`AssetVersion` 写入和 `Shot current pointer` 更新。
+- 当前证据：creator application 与 creator platform 测试已覆盖 deferred finalization、current pointer 写入和任务状态落地。
+- 下一步动作：继续验证真实 provider/storage 配置、失败可见性和发布前回归。
+
 ## 12. 任务 B8：GenerateShotVideo 最小实现
 
 | 字段 | 内容 |
@@ -159,6 +205,12 @@ B 可以立即开始以下工作：
 | 失败处理 | 缺少 current 图片时被拒绝；旧视频不被覆写；失败可重试。 |
 | 主循环 | 是。它在图片路径稳定后完成 P0 媒体能力。 |
 
+当前状态 / 下一步动作：
+
+- 当前已具备能力：视频生成闭环已存在，并复用了 `current image` 作为启动前提。
+- 当前证据：creator application 集成测试已覆盖视频任务成功落地与 project phase 推进；领域测试已覆盖 stale/current pointer 规则。
+- 下一步动作：继续验证失败重试、真实视频 provider 适配和发布前回归。
+
 ## 13. 任务 B9：Export Manifest
 
 | 字段 | 内容 |
@@ -169,6 +221,12 @@ B 可以立即开始以下工作：
 | 验证 | TC-P0-007、TC-P0-014、R-017。 |
 | 失败处理 | 缺失 asset 默认阻塞；导出失败可重试；签名下载链接可刷新。 |
 | 主循环 | 是。它关闭 P0-A 创作者循环。 |
+
+当前状态 / 下一步动作：
+
+- 当前已具备能力：manifest、export record、signed URL、export history 查询和 export phase 推进已经具备。
+- 当前证据：creator application / creator platform 测试已覆盖导出记录创建、签名链接生成和导出任务成功落地。
+- 下一步动作：继续验证 partial export 交互路径、真实下载链路和发布前回归。
 
 ## 14. 第一周计划
 

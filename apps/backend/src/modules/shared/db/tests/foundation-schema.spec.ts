@@ -23,6 +23,7 @@ describe("foundation schema", () => {
         "tasks",
         "task_attempts",
         "provider_requests",
+        "export_records",
         "credit_reservations",
         "credit_reservation_allocations",
         "credit_ledger_entries",

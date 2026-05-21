@@ -64,22 +64,19 @@ function resolveTestCommand(testFiles, hasTypeScriptTests) {
   const runtime = findNodeRuntime(18);
 
   if (hasTypeScriptTests) {
-    const tsxLoader = join(process.cwd(), "node_modules", "tsx", "dist", "loader.mjs");
+    const tsxPackage = join(process.cwd(), "node_modules", "tsx");
 
-    if (!existsSync(tsxLoader)) {
-      console.error("Unable to find tsx loader at node_modules/tsx/dist/loader.mjs");
+    if (!existsSync(tsxPackage)) {
+      console.error("Unable to find tsx at node_modules/tsx");
       process.exit(1);
     }
 
     return {
       runtime,
       args: [
+        "--loader",
+        "tsx",
         "--test",
-        "--test-isolation=none",
-        "--test-concurrency=1",
-        "--test-reporter=tap",
-        "--import",
-        tsxLoader,
         ...testFiles,
       ],
     };
@@ -89,9 +86,6 @@ function resolveTestCommand(testFiles, hasTypeScriptTests) {
     runtime,
     args: [
       "--test",
-      "--test-isolation=none",
-      "--test-concurrency=1",
-      "--test-reporter=tap",
       ...testFiles,
     ],
   };

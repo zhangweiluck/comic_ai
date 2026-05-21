@@ -5,12 +5,15 @@ import {
   confirmAssetCandidate,
   createAssetReviewState,
   type AssetReviewState,
+  updateAssetCandidateLabel,
 } from "./asset-review.service.ts";
 import { InMemoryAssetStore } from "./asset.service.ts";
 import {
   createCalibrationSession,
   markCalibrationItemReviewed,
+  overrideCalibrationSession,
   passCalibrationSession,
+  skipCalibrationSession,
   type CalibrationSessionRecord,
 } from "./calibration.service.ts";
 import { buildExportManifest, type ExportManifest } from "./export-manifest.service.ts";
@@ -24,7 +27,7 @@ import {
   finalizeShotImageGenerationBatch,
   startShotImageGenerationBatch,
 } from "./shot-image-generation.service.ts";
-import { createShotDraft, InMemoryShotStore } from "./shot.service.ts";
+import { createShotDraft, InMemoryShotStore, type ShotRecord } from "./shot.service.ts";
 import {
   finalizeShotVideoGeneration,
   startShotVideoGeneration,
@@ -44,6 +47,7 @@ export interface CreatorDevStateSnapshot {
   project: ProjectBundle["project"] | null;
   script: ProjectBundle["script"] | null;
   assetReview: ReturnType<typeof computeAssetReviewSummary> | null;
+  assetCandidates: AssetReviewState | null;
   calibration: CalibrationSessionRecord | null;
   shots: CreatorShotView[];
   exportPreview: ExportManifest | null;
@@ -65,7 +69,17 @@ export class CreatorDevApp {
     scriptInput: string;
     aspectRatio: string;
     resolution: string;
+    seedBundle?: ProjectBundle;
   }) {
+    if (input.seedBundle) {
+      this.activeBundle = input.seedBundle;
+      this.activeAssetReview = null;
+      this.activeCalibration = null;
+      this.shotIds = [];
+      this.exportPreview = null;
+      return input.seedBundle;
+    }
+
     this.requestCounter += 1;
     const created = await createProjectDraft(this.projectStore, {
       organizationId: "dev-org",
@@ -134,7 +148,7 @@ export class CreatorDevApp {
     return {
       parse: parsed,
       assetReview: computeAssetReviewSummary(this.activeAssetReview),
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
@@ -162,27 +176,65 @@ export class CreatorDevApp {
     }
 
     this.activeAssetReview = next;
-    return { assetReview: computeAssetReviewSummary(next) };
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
+  }
+
+  confirmAsset(input: {
+    group: "character" | "scene" | "prop";
+    assetKey: string;
+  }) {
+    const next = confirmAssetCandidate(this.requireAssetReview(), input);
+    this.activeAssetReview = next;
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
+  }
+
+  updateAssetLabel(input: {
+    group: "character" | "scene" | "prop";
+    assetKey: string;
+    label: string;
+  }) {
+    const next = updateAssetCandidateLabel(this.requireAssetReview(), input);
+    this.activeAssetReview = next;
+    return {
+      assetReview: computeAssetReviewSummary(next),
+      assetCandidates: next,
+    };
   }
 
   async runCalibration() {
-    const shots = await this.listShots();
-    let calibration = createCalibrationSession({
-      organizationId: "dev-org",
-      projectId: this.requireBundle().project.id,
-      shotIds: shots.slice(0, 3).map((shot) => shot.id),
-      createdByUserId: "dev-user",
+    let calibration = await this.createReviewedCalibrationSession();
+    calibration = passCalibrationSession(calibration, {
+      decidedByUserId: this.requireBundle().project.createdByUserId,
     });
 
-    for (const item of calibration.items) {
-      calibration = markCalibrationItemReviewed(calibration, {
-        shotId: item.shotId,
-        qualityReviewResult: "passed",
-      });
-    }
+    this.activeCalibration = calibration;
+    return { calibration };
+  }
 
-    calibration = passCalibrationSession(calibration, {
-      decidedByUserId: "dev-user",
+  async skipCalibration(input: { reason: string }) {
+    let calibration = await this.createReviewedCalibrationSession();
+    calibration = skipCalibrationSession(calibration, {
+      decidedByUserId: this.requireBundle().project.createdByUserId,
+      reason: input.reason,
+    });
+
+    this.activeCalibration = calibration;
+    return { calibration };
+  }
+
+  async overrideCalibration(input: { reason?: string | null }) {
+    let calibration = await this.createReviewedCalibrationSession({
+      failedShotIndex: 0,
+    });
+    calibration = overrideCalibrationSession(calibration, {
+      decidedByUserId: this.requireBundle().project.createdByUserId,
+      reason: input.reason ?? null,
     });
 
     this.activeCalibration = calibration;
@@ -191,78 +243,124 @@ export class CreatorDevApp {
 
   async generateImages() {
     const shots = await this.listShots();
+    const bindings = shots.map((shot, index) => ({
+      shotId: shot.id,
+      taskId: `image-task-${index + 1}`,
+      storageObjectKey: `generated/${shot.id}.png`,
+      sourceAttemptId: randomUUID(),
+    }));
+    return this.generateImagesForTasks(bindings);
+  }
+
+  async generateImagesForTasks(
+    bindings: Array<{
+      shotId: string;
+      taskId: string;
+      storageObjectKey: string;
+      sourceAttemptId: string;
+    }>,
+  ) {
     const started = await startShotImageGenerationBatch(this.shotStore, {
       calibration: this.requireCalibration(),
-      requests: shots.map((shot, index) => ({
-        shotId: shot.id,
-        taskId: `image-task-${index + 1}`,
+      requests: bindings.map((binding) => ({
+        shotId: binding.shotId,
+        taskId: binding.taskId,
       })),
     });
 
     const results = await finalizeShotImageGenerationBatch(this.assetStore, this.shotStore, {
-      organizationId: "dev-org",
+      organizationId: this.requireBundle().project.organizationId,
       projectId: this.requireBundle().project.id,
-      createdByUserId: "dev-user",
-      results: started.map((shot, index) => ({
-        shotId: shot.id,
-        taskId: `image-task-${index + 1}`,
-        requestedContentRevision: shot.activeImageRevision ?? 1,
-        status: "succeeded" as const,
-        storageObjectKey: `generated/${shot.id}.png`,
-        metadata: {
-          mimeType: "image/png",
-          width: 720,
-          height: 1280,
-        },
-        sourceAttemptId: randomUUID(),
-      })),
+      createdByUserId: this.requireBundle().project.createdByUserId,
+      results: started.map((shot) => {
+        const binding = bindings.find((candidate) => candidate.shotId === shot.id);
+        if (!binding) {
+          throw new Error(`creator_image_binding_missing:${shot.id}`);
+        }
+
+        return {
+          shotId: shot.id,
+          taskId: binding.taskId,
+          requestedContentRevision: shot.activeImageRevision ?? 1,
+          status: "succeeded" as const,
+          storageObjectKey: binding.storageObjectKey,
+          metadata: {
+            mimeType: "image/png",
+            width: 720,
+            height: 1280,
+          },
+          sourceAttemptId: binding.sourceAttemptId,
+        };
+      }),
     });
 
     this.exportPreview = null;
     return {
       ...results,
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
   async generateVideos() {
     const shots = await this.listShots();
+    const bindings = shots.map((shot, index) => ({
+      shotId: shot.id,
+      taskId: `video-task-${index + 1}`,
+      storageObjectKey: `generated/${shot.id}.mp4`,
+      sourceAttemptId: randomUUID(),
+    }));
+    return this.generateVideosForTasks(bindings);
+  }
+
+  async generateVideosForTasks(
+    bindings: Array<{
+      shotId: string;
+      taskId: string;
+      storageObjectKey: string;
+      sourceAttemptId: string;
+    }>,
+  ) {
     const started = [];
 
-    for (let index = 0; index < shots.length; index += 1) {
+    for (const binding of bindings) {
       started.push(
         await startShotVideoGeneration(this.shotStore, {
-          shotId: shots[index]!.id,
-          taskId: `video-task-${index + 1}`,
+          shotId: binding.shotId,
+          taskId: binding.taskId,
         }),
       );
     }
 
     const results = [];
-    for (let index = 0; index < started.length; index += 1) {
+    for (const shot of started) {
+      const binding = bindings.find((candidate) => candidate.shotId === shot.id);
+      if (!binding) {
+        throw new Error(`creator_video_binding_missing:${shot.id}`);
+      }
+
       results.push(
         await finalizeShotVideoGeneration(this.assetStore, this.shotStore, {
-          organizationId: "dev-org",
+          organizationId: this.requireBundle().project.organizationId,
           projectId: this.requireBundle().project.id,
-          createdByUserId: "dev-user",
-          shotId: started[index]!.id,
-          taskId: `video-task-${index + 1}`,
-          requestedImageAssetVersionId: started[index]!.currentImageAssetVersionId ?? "",
+          createdByUserId: this.requireBundle().project.createdByUserId,
+          shotId: shot.id,
+          taskId: binding.taskId,
+          requestedImageAssetVersionId: shot.currentImageAssetVersionId ?? "",
           status: "succeeded",
-          storageObjectKey: `generated/${started[index]!.id}.mp4`,
+          storageObjectKey: binding.storageObjectKey,
           metadata: {
             mimeType: "video/mp4",
             width: 720,
             height: 1280,
           },
-          sourceAttemptId: randomUUID(),
+          sourceAttemptId: binding.sourceAttemptId,
         }),
       );
     }
 
     return {
       results,
-      shots: await this.listShots(),
+      shots: await this.listShotRecords(),
     };
   }
 
@@ -286,6 +384,7 @@ export class CreatorDevApp {
       assetReview: this.activeAssetReview
         ? computeAssetReviewSummary(this.activeAssetReview)
         : null,
+      assetCandidates: this.activeAssetReview,
       calibration: this.activeCalibration,
       shots: await this.listShots(),
       exportPreview: this.exportPreview,
@@ -293,22 +392,26 @@ export class CreatorDevApp {
   }
 
   private async listShots(): Promise<CreatorShotView[]> {
-    const shots: CreatorShotView[] = [];
+    const shotRecords = await this.listShotRecords();
+    return shotRecords.map((shot) => ({
+      id: shot.id,
+      title: shot.title,
+      contentRevision: shot.contentRevision,
+      imageStatus: shot.imageStatus,
+      videoStatus: shot.videoStatus,
+      currentImageAssetVersionId: shot.currentImageAssetVersionId,
+      currentVideoAssetVersionId: shot.currentVideoAssetVersionId,
+    }));
+  }
+
+  private async listShotRecords(): Promise<ShotRecord[]> {
+    const shots: ShotRecord[] = [];
     for (const shotId of this.shotIds) {
       const shot = await this.shotStore.findShot(shotId);
       if (!shot) {
         continue;
       }
-
-      shots.push({
-        id: shot.id,
-        title: shot.title,
-        contentRevision: shot.contentRevision,
-        imageStatus: shot.imageStatus,
-        videoStatus: shot.videoStatus,
-        currentImageAssetVersionId: shot.currentImageAssetVersionId,
-        currentVideoAssetVersionId: shot.currentVideoAssetVersionId,
-      });
+      shots.push(shot);
     }
     return shots;
   }
@@ -332,5 +435,25 @@ export class CreatorDevApp {
       throw new Error("creator_calibration_missing");
     }
     return this.activeCalibration;
+  }
+
+  private async createReviewedCalibrationSession(input?: { failedShotIndex?: number }) {
+    const shots = await this.listShots();
+    let calibration = createCalibrationSession({
+      organizationId: this.requireBundle().project.organizationId,
+      projectId: this.requireBundle().project.id,
+      shotIds: shots.slice(0, 3).map((shot) => shot.id),
+      createdByUserId: this.requireBundle().project.createdByUserId,
+    });
+
+    for (const [index, item] of calibration.items.entries()) {
+      calibration = markCalibrationItemReviewed(calibration, {
+        shotId: item.shotId,
+        qualityReviewResult:
+          input?.failedShotIndex === index ? "failed" : "passed",
+      });
+    }
+
+    return calibration;
   }
 }

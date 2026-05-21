@@ -50,7 +50,7 @@ describe("creator domain readiness", () => {
     ]);
   });
 
-  it("documents the current platform blockers instead of inventing workarounds", () => {
+  it("keeps the historical blocker list while marking the resolved platform gates as ready", () => {
     assert.deepEqual(
       creatorDomainBlockers.map((blocker) => blocker.id),
       [
@@ -61,7 +61,7 @@ describe("creator domain readiness", () => {
       ],
     );
     assert.equal(
-      creatorDomainBlockers.every((blocker) => blocker.status === "open"),
+      creatorDomainBlockers.every((blocker) => blocker.status === "ready"),
       true,
     );
   });
