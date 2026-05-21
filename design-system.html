@@ -1,0 +1,2108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xAI Inspired Web UI Kit Design System</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --color-bg-canvas: #0a0a0a;
+        --color-bg-surface: #191919;
+        --color-bg-surface-soft: #1a1c20;
+        --color-bg-surface-mid: #363a3f;
+        --color-text-primary: #ffffff;
+        --color-text-secondary: #dadbdf;
+        --color-text-muted: #7d8187;
+        --color-border-subtle: #212327;
+        --color-border-strong-semantic: rgba(255, 255, 255, 0.25);
+        --color-action-primary: #ffffff;
+        --color-action-on-primary: #0a0a0a;
+        --color-canvas: var(--color-bg-canvas);
+        --color-canvas-soft: var(--color-bg-surface-soft);
+        --color-canvas-card: var(--color-bg-surface);
+        --color-canvas-mid: var(--color-bg-surface-mid);
+        --color-hairline: var(--color-border-subtle);
+        --color-border-strong: var(--color-border-strong-semantic);
+        --color-primary: var(--color-action-primary);
+        --color-on-primary: var(--color-action-on-primary);
+        --color-ink: var(--color-text-primary);
+        --color-body: var(--color-text-secondary);
+        --color-muted: var(--color-text-muted);
+        --color-accent-sunset: #ff7a17;
+        --color-accent-sunset-soft: #ffc285;
+        --color-accent-dusk: #7c3aed;
+        --color-accent-twilight: #c4b5fd;
+        --color-accent-breeze: #a0c3ec;
+        --color-accent-midnight: #0d1726;
+        --state-error-text: var(--color-accent-sunset-soft);
+        --state-warning-text: var(--color-accent-sunset-soft);
+        --state-success-text: var(--color-accent-breeze);
+        --font-sans:
+          Inter, Geist, "Helvetica Neue", Arial, "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        --font-mono:
+          "Geist Mono", "JetBrains Mono", "SFMono-Regular", Consolas,
+          monospace;
+        --size-display-xl: 96px;
+        --size-display-lg: 72px;
+        --size-display-md: 48px;
+        --size-display-sm: 32px;
+        --size-display-xs: 20px;
+        --size-body-lg: 18px;
+        --size-body-md: 16px;
+        --size-body-sm: 14px;
+        --size-caption: 12px;
+        --leading-tight: 1;
+        --leading-display: 1.12;
+        --leading-body: 1.5;
+        --space-xxs: 2px;
+        --space-xs: 4px;
+        --space-sm: 8px;
+        --space-md: 12px;
+        --space-lg: 16px;
+        --space-xl: 24px;
+        --space-2xl: 32px;
+        --space-3xl: 48px;
+        --space-4xl: 64px;
+        --radius-none: 0;
+        --radius-sm: 8px;
+        --radius-pill: 9999px;
+        --container: 1200px;
+        --focus: #a0c3ec;
+        --component-button-radius: var(--radius-pill);
+        --component-card-radius: var(--radius-sm);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--color-canvas);
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-canvas);
+        color: var(--color-ink);
+        font-family: var(--font-sans);
+        font-size: var(--size-body-md);
+        line-height: var(--leading-body);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 3px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .side-nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        padding: var(--space-xl);
+        border-right: 1px solid var(--color-hairline);
+        background: var(--color-canvas);
+        overflow: auto;
+      }
+
+      .brand-mark {
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+        margin-bottom: var(--space-2xl);
+      }
+
+      .mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-pill);
+        color: var(--color-ink);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .brand-name {
+        margin: 0;
+        color: var(--color-ink);
+        font-size: 16px;
+        line-height: 1.2;
+      }
+
+      .brand-subtitle,
+      .muted {
+        color: var(--color-muted);
+      }
+
+      .brand-subtitle {
+        margin: 2px 0 0;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: var(--space-xs);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .nav-link {
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+        padding: var(--space-sm) var(--space-md);
+        border: 1px solid transparent;
+        border-radius: var(--radius-pill);
+        color: var(--color-body);
+        text-decoration: none;
+        font-size: var(--size-body-sm);
+      }
+
+      .nav-link:hover,
+      .nav-link[aria-current="page"] {
+        border-color: var(--color-border-strong);
+        color: var(--color-ink);
+        background: var(--color-canvas-soft);
+      }
+
+      .main {
+        min-width: 0;
+      }
+
+      .hero,
+      .section {
+        border-bottom: 1px solid var(--color-hairline);
+      }
+
+      .hero {
+        padding: var(--space-4xl) var(--space-xl);
+      }
+
+      .section {
+        padding: var(--space-4xl) var(--space-xl);
+      }
+
+      .container {
+        width: min(var(--container), 100%);
+        margin: 0 auto;
+      }
+
+      .hero-inner {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+        gap: var(--space-3xl);
+        align-items: end;
+      }
+
+      .eyebrow {
+        margin: 0 0 var(--space-lg);
+        color: var(--color-body);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 16px;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 11ch;
+        margin-bottom: var(--space-xl);
+        font-size: var(--size-display-xl);
+        font-weight: 400;
+        line-height: var(--leading-tight);
+      }
+
+      h2 {
+        margin-bottom: var(--space-xl);
+        font-size: var(--size-display-md);
+        font-weight: 400;
+        line-height: var(--leading-display);
+      }
+
+      h3 {
+        margin-bottom: var(--space-md);
+        font-size: var(--size-display-xs);
+        font-weight: 400;
+        line-height: 28px;
+      }
+
+      .lead {
+        max-width: 680px;
+        color: var(--color-body);
+        font-size: var(--size-body-lg);
+        line-height: 28px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-md);
+        margin-top: var(--space-xl);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        gap: var(--space-sm);
+        padding: var(--space-sm) var(--space-lg);
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--color-ink);
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .button:hover {
+        background: var(--color-canvas-soft);
+      }
+
+      .button:active,
+      .button[data-state="pressed"] {
+        transform: translateY(1px);
+        border-color: var(--color-primary);
+      }
+
+      .button-primary {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+      }
+
+      .button[disabled],
+      .button-disabled {
+        opacity: 0.42;
+        cursor: not-allowed;
+      }
+
+      .button[aria-busy="true"]::before,
+      .button[data-state="loading"]::before {
+        width: 0.75em;
+        height: 0.75em;
+        border: 1px solid currentColor;
+        border-top-color: transparent;
+        border-radius: var(--radius-pill);
+        content: "";
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .button-danger {
+        border-color: rgba(255, 122, 23, 0.55);
+        color: var(--color-accent-sunset-soft);
+      }
+
+      .icon-button {
+        width: 40px;
+        padding: 0;
+      }
+
+      .card {
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+        background: var(--color-canvas-card);
+        padding: var(--space-xl);
+      }
+
+      .card-soft {
+        background: var(--color-canvas-soft);
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        display: grid;
+        gap: var(--space-lg);
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .token-swatch {
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+      }
+
+      .swatch {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-sm);
+      }
+
+      .token-name {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .token-value {
+        margin: 2px 0 0;
+        color: var(--color-muted);
+        font-size: 13px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+      }
+
+      table {
+        width: 100%;
+        min-width: 760px;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: var(--space-md) var(--space-lg);
+        border-bottom: 1px solid var(--color-hairline);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--color-body);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 400;
+        text-transform: uppercase;
+        background: var(--color-canvas-soft);
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      tr[data-state="selected"] td {
+        background: var(--color-canvas-soft);
+        color: var(--color-ink);
+      }
+
+      th[aria-sort]::after {
+        margin-left: var(--space-sm);
+        color: var(--color-muted);
+        content: "↕";
+      }
+
+      th[aria-sort="ascending"]::after {
+        content: "↑";
+      }
+
+      th[aria-sort="descending"]::after {
+        content: "↓";
+      }
+
+      td {
+        color: var(--color-body);
+      }
+
+      code,
+      pre {
+        font-family: var(--font-mono);
+      }
+
+      code {
+        color: var(--color-accent-breeze);
+        font-size: 0.92em;
+      }
+
+      pre {
+        overflow: auto;
+        margin: 0;
+        padding: var(--space-lg);
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+        background: var(--color-canvas-mid);
+        color: var(--color-body);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .type-sample-xl {
+        margin-bottom: var(--space-md);
+        font-size: var(--size-display-lg);
+        line-height: var(--leading-tight);
+      }
+
+      .type-sample-md {
+        font-size: var(--size-display-sm);
+        line-height: 36px;
+      }
+
+      .mono-sample {
+        color: var(--color-body);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .component-preview {
+        display: grid;
+        gap: var(--space-lg);
+      }
+
+      .component-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-md);
+      }
+
+      .field {
+        display: grid;
+        gap: var(--space-sm);
+      }
+
+      .label {
+        color: var(--color-body);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .input,
+      .select,
+      .textarea {
+        width: 100%;
+        min-height: 44px;
+        padding: var(--space-md) var(--space-lg);
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+        background: var(--color-canvas-soft);
+        color: var(--color-ink);
+      }
+
+      .textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .input[aria-invalid="true"],
+      .select[aria-invalid="true"],
+      .textarea[aria-invalid="true"] {
+        border-color: rgba(255, 194, 133, 0.7);
+      }
+
+      .input[readonly],
+      .textarea[readonly] {
+        background: transparent;
+        color: var(--color-body);
+      }
+
+      .input:disabled,
+      .select:disabled,
+      .textarea:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .helper {
+        margin: 0;
+        color: var(--color-muted);
+        font-size: var(--size-body-sm);
+      }
+
+      .error {
+        color: var(--color-accent-sunset-soft);
+      }
+
+      .success {
+        color: var(--state-success-text);
+      }
+
+      .tag,
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: var(--space-xs) var(--space-md);
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-pill);
+        color: var(--color-body);
+        font-size: 13px;
+      }
+
+      .badge {
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+      }
+
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-sm);
+        padding: var(--space-xs);
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-pill);
+        width: fit-content;
+      }
+
+      .tab {
+        min-height: 34px;
+        padding: var(--space-xs) var(--space-md);
+        border: 1px solid transparent;
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--color-body);
+      }
+
+      .tab[aria-selected="true"] {
+        border-color: var(--color-border-strong);
+        color: var(--color-ink);
+        background: var(--color-canvas-soft);
+      }
+
+      .modal-demo {
+        max-width: 520px;
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+        background: var(--color-canvas-card);
+        padding: var(--space-xl);
+      }
+
+      .toast {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--space-lg);
+        max-width: 520px;
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--color-canvas-soft);
+        padding: var(--space-md) var(--space-lg);
+      }
+
+      .empty-state {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        border: 1px dashed var(--color-border-strong);
+        border-radius: var(--radius-sm);
+        color: var(--color-muted);
+        text-align: center;
+      }
+
+      .template-frame {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        min-height: 360px;
+        border: 1px solid var(--color-hairline);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+
+      .template-side {
+        padding: var(--space-lg);
+        border-right: 1px solid var(--color-hairline);
+        background: var(--color-canvas);
+      }
+
+      .template-main {
+        padding: var(--space-lg);
+        background: var(--color-canvas-card);
+      }
+
+      .placeholder-line {
+        height: 10px;
+        border-radius: var(--radius-pill);
+        background: var(--color-canvas-mid);
+      }
+
+      .placeholder-stack {
+        display: grid;
+        gap: var(--space-sm);
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-md);
+      }
+
+      .icon-spec {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-pill);
+      }
+
+      .icon-spec svg {
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .do-dont {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-lg);
+      }
+
+      .list {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--color-body);
+      }
+
+      .list li + li {
+        margin-top: var(--space-sm);
+      }
+
+      @media (max-width: 1100px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .side-nav {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--color-hairline);
+        }
+
+        .nav-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .hero-inner,
+        .grid-2,
+        .grid-3,
+        .grid-4,
+        .do-dont {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 768px) {
+        :root {
+          --size-display-xl: 48px;
+          --size-display-lg: 44px;
+          --size-display-md: 34px;
+          --size-display-sm: 26px;
+          --space-4xl: 40px;
+        }
+
+        .hero,
+        .section,
+        .side-nav {
+          padding: var(--space-xl);
+        }
+
+        .nav-list {
+          grid-template-columns: 1fr;
+        }
+
+        .template-frame {
+          grid-template-columns: 1fr;
+        }
+
+        .template-side {
+          border-right: 0;
+          border-bottom: 1px solid var(--color-hairline);
+        }
+
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="side-nav" aria-label="Design system navigation">
+        <div class="brand-mark">
+          <div class="mark" aria-hidden="true">DS</div>
+          <div>
+            <p class="brand-name">xAI Web UI Kit</p>
+            <p class="brand-subtitle">Design system</p>
+          </div>
+        </div>
+        <nav>
+          <ul class="nav-list">
+            <li><a class="nav-link" href="#overview" aria-current="page">Overview</a></li>
+            <li><a class="nav-link" href="#principles">Design Principles</a></li>
+            <li><a class="nav-link" href="#tokens">Design Tokens</a></li>
+            <li><a class="nav-link" href="#components">Components</a></li>
+            <li><a class="nav-link" href="#states">Component States</a></li>
+            <li><a class="nav-link" href="#patterns">Patterns</a></li>
+            <li><a class="nav-link" href="#responsive">Responsive</a></li>
+            <li><a class="nav-link" href="#templates">Templates</a></li>
+            <li><a class="nav-link" href="#accessibility">Accessibility</a></li>
+            <li><a class="nav-link" href="#component-system">Component System</a></li>
+            <li><a class="nav-link" href="#implementation">Implementation</a></li>
+          </ul>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header id="overview" class="hero">
+          <div class="container hero-inner">
+            <div>
+              <p class="eyebrow">Source converted from design.md</p>
+              <h1>Engineered restraint for frontier AI interfaces.</h1>
+              <p class="lead">
+                这份单页设计系统把 `design.md` 转化为可浏览、可实现的 Web UI Kit：设计原则、基础样式、组件、状态、模式、页面模板和开发协作规则都在同一个 HTML 中。
+              </p>
+              <div class="actions">
+                <a class="button button-primary" href="#tokens">View tokens</a>
+                <a class="button" href="#components">Browse components</a>
+              </div>
+            </div>
+            <section class="card card-soft" aria-label="System summary">
+              <p class="eyebrow">System DNA</p>
+              <div class="placeholder-stack">
+                <div class="token-swatch">
+                  <span class="swatch" style="background: #0a0a0a"></span>
+                  <div>
+                    <p class="token-name">Near-black canvas</p>
+                    <p class="token-value">#0a0a0a as the dominant surface</p>
+                  </div>
+                </div>
+                <div class="token-swatch">
+                  <span class="swatch" style="background: #ffffff"></span>
+                  <div>
+                    <p class="token-name">White interaction vocabulary</p>
+                    <p class="token-value">Outline pills and one rare filled CTA</p>
+                  </div>
+                </div>
+                <div class="token-swatch">
+                  <span class="swatch" style="background: #191919"></span>
+                  <div>
+                    <p class="token-name">Hairline depth</p>
+                    <p class="token-value">8px cards, 1px borders, no shadows</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </header>
+
+        <section id="principles" class="section">
+          <div class="container">
+            <p class="eyebrow">01 / Principles</p>
+            <h2>设计原则</h2>
+            <div class="grid-3">
+              <article class="card">
+                <h3>克制即品牌</h3>
+                <p class="muted">界面不依赖渐变、照片、厚重阴影或营销式装饰。近黑画布、白色细线和精准排版构成主要识别。</p>
+              </article>
+              <article class="card">
+                <h3>形状系统单一</h3>
+                <p class="muted">所有交互元素使用 pill。卡片只使用 8px 小圆角，避免让界面变成松散的圆角后台模板。</p>
+              </article>
+              <article class="card">
+                <h3>排版承担情绪</h3>
+                <p class="muted">大字号、常规字重、mono eyebrow 和清晰留白负责建立研究实验室般的高级感。</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="tokens" class="section">
+          <div class="container">
+            <p class="eyebrow">02 / Foundations</p>
+            <h2>基础样式与 Design Tokens</h2>
+            <div class="grid-2">
+              <section class="card">
+                <h3>Color Tokens</h3>
+                <div class="component-preview">
+                  <div class="token-swatch"><span class="swatch" style="background:#0a0a0a"></span><div><p class="token-name">--color-canvas</p><p class="token-value">#0a0a0a / page background</p></div></div>
+                  <div class="token-swatch"><span class="swatch" style="background:#191919"></span><div><p class="token-name">--color-canvas-card</p><p class="token-value">#191919 / cards</p></div></div>
+                  <div class="token-swatch"><span class="swatch" style="background:#1a1c20"></span><div><p class="token-name">--color-canvas-soft</p><p class="token-value">#1a1c20 / hover, inputs</p></div></div>
+                  <div class="token-swatch"><span class="swatch" style="background:#ffffff"></span><div><p class="token-name">--color-primary</p><p class="token-value">#ffffff / filled CTA, key text</p></div></div>
+                  <div class="token-swatch"><span class="swatch" style="background:#7d8187"></span><div><p class="token-name">--color-muted</p><p class="token-value">#7d8187 / captions</p></div></div>
+                  <div class="token-swatch"><span class="swatch" style="background:#ff7a17"></span><div><p class="token-name">--color-accent-sunset</p><p class="token-value">#ff7a17 / rare accent</p></div></div>
+                </div>
+              </section>
+              <section class="card">
+                <h3>Typography</h3>
+                <p class="type-sample-xl">Display system</p>
+                <p class="type-sample-md">Section headline</p>
+                <p class="mono-sample">Mono eyebrow label</p>
+                <p class="muted">Primary implementation uses Inter/Geist fallback for the proprietary Universal Sans role, with Geist Mono or system mono for labels.</p>
+              </section>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Token Group</th>
+                    <th>Scale</th>
+                    <th>Usage</th>
+                    <th>Implementation Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Spacing</td>
+                    <td>2, 4, 8, 12, 16, 24, 32, 48, 64px</td>
+                    <td>Page rhythm, card padding, control gaps</td>
+                    <td>Use 4px base; avoid one-off spacing.</td>
+                  </tr>
+                  <tr>
+                    <td>Radius</td>
+                    <td>0, 8px, 9999px</td>
+                    <td>Bands, cards, pills</td>
+                    <td>Cards stay 8px; interactive controls use pill shape.</td>
+                  </tr>
+                  <tr>
+                    <td>Elevation</td>
+                    <td>Flat, hairline</td>
+                    <td>Depth by borders</td>
+                    <td>No shadows; use 1px borders and surface contrast.</td>
+                  </tr>
+                  <tr>
+                    <td>Grid</td>
+                    <td>1200px container; 2-up desktop; 1-up mobile</td>
+                    <td>Marketing and product surfaces</td>
+                    <td>Collapse before content becomes cramped.</td>
+                  </tr>
+                  <tr>
+                    <td>Icon</td>
+                    <td>16, 20, 24px</td>
+                    <td>Buttons, nav, metadata</td>
+                    <td>Line icons, single weight, no filled decorative icons.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-2" style="margin-top: var(--space-lg)">
+              <article class="card component-preview">
+                <h3>Icon System</h3>
+                <div class="component-row" aria-label="Icon examples">
+                  <span class="icon-spec" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 12h16" /><path d="M12 4v16" /></svg>
+                  </span>
+                  <span class="icon-spec" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></svg>
+                  </span>
+                  <span class="icon-spec" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z" /><path d="M9 9h6v6H9z" /></svg>
+                  </span>
+                </div>
+                <p class="helper">Use line icons with 1.75px stroke, round caps/joins, 16/20/24px sizes. Icon-only controls must use an accessible label.</p>
+              </article>
+              <article class="card">
+                <h3>Icon Rules</h3>
+                <ul class="list">
+                  <li>Preferred source: lucide-style outline icons or an equivalent single-stroke library.</li>
+                  <li>Default size: 20px inside 40px icon buttons; 16px for dense metadata; 24px for empty states.</li>
+                  <li>Do not mix filled, duotone, emoji, and outline icons in the same product surface.</li>
+                  <li>Pair icons with text for unfamiliar actions. Icon-only is reserved for repeated, common controls.</li>
+                  <li>Optical alignment: center icons inside the pill and avoid resizing the button on hover/loading.</li>
+                </ul>
+              </article>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Token Layer</th>
+                    <th>Naming Pattern</th>
+                    <th>Examples</th>
+                    <th>Use Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Primitive</td>
+                    <td><code>primitive.color.*</code>, <code>primitive.space.*</code></td>
+                    <td><code>primitive.color.neutral.950 = #0a0a0a</code>, <code>primitive.space.4 = 16px</code></td>
+                    <td>Raw values. Do not use directly in product components except inside theme mapping.</td>
+                  </tr>
+                  <tr>
+                    <td>Semantic</td>
+                    <td><code>color.bg.*</code>, <code>color.text.*</code>, <code>color.border.*</code></td>
+                    <td><code>color.bg.canvas</code>, <code>color.bg.surface</code>, <code>color.text.primary</code>, <code>color.border.subtle</code></td>
+                    <td>Default layer for application UI. Semantic tokens describe intent rather than raw color names.</td>
+                  </tr>
+                  <tr>
+                    <td>Component</td>
+                    <td><code>component.[name].[part].[state]</code></td>
+                    <td><code>component.button.outline.border</code>, <code>component.input.error.border</code>, <code>component.card.radius</code></td>
+                    <td>Use when a component needs stable theming independent of the global semantic layer.</td>
+                  </tr>
+                  <tr>
+                    <td>State</td>
+                    <td><code>state.[intent].*</code></td>
+                    <td><code>state.error.text</code>, <code>state.warning.border</code>, <code>state.success.icon</code></td>
+                    <td>Use for validation, alerts, badges, and task status. Never rely on color alone.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-2" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Token JSON Shape</h3>
+                <pre><code>{
+  "color": {
+    "bg": {
+      "canvas": "{primitive.color.neutral.950}",
+      "surface": "{primitive.color.neutral.900}"
+    },
+    "text": {
+      "primary": "{primitive.color.white}",
+      "muted": "{primitive.color.neutral.500}"
+    }
+  },
+  "radius": {
+    "card": "8px",
+    "control": "9999px"
+  }
+}</code></pre>
+              </article>
+              <article class="card">
+                <h3>Tailwind / Figma Mapping</h3>
+                <pre><code>CSS var: --color-bg-canvas
+Legacy alias: --color-canvas
+Tailwind: bg-canvas text-primary border-subtle
+Figma variable: color/bg/canvas
+React token: tokens.color.bg.canvas</code></pre>
+                <p class="helper">Semantic names are the source of truth. Legacy aliases such as <code>--color-canvas</code> may remain for backward compatibility, but new component work should use semantic tokens.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="components" class="section">
+          <div class="container">
+            <p class="eyebrow">03 / Component Library</p>
+            <h2>组件库</h2>
+            <div class="grid-2">
+              <article class="card component-preview">
+                <h3>Button</h3>
+                <div class="component-row">
+                  <button class="button button-primary" type="button">Sign up now</button>
+                  <button class="button" type="button">Read announcement</button>
+                  <button class="button button-danger" type="button">Delete</button>
+                  <button class="button icon-button" type="button" aria-label="More actions">•••</button>
+                  <button class="button" type="button" disabled>Disabled</button>
+                </div>
+                <p class="helper">Use white outline pills for normal actions. Use the filled pill only for the rare primary conversion action.</p>
+              </article>
+
+              <article class="card component-preview">
+                <h3>Inputs</h3>
+                <label class="field">
+                  <span class="label">Project name</span>
+                  <input class="input" value="Frontier research brief" />
+                  <span class="helper">Use dark soft fill, 8px radius, visible focus ring.</span>
+                </label>
+                <label class="field">
+                  <span class="label">Model</span>
+                  <select class="select">
+                    <option>Grok reasoning</option>
+                    <option>Voice agent</option>
+                    <option>API access</option>
+                  </select>
+                </label>
+              </article>
+
+              <article class="card component-preview">
+                <h3>Tabs, Tags, Badges</h3>
+                <div class="tabs" role="tablist" aria-label="Product sections">
+                  <button class="tab" type="button" role="tab" aria-selected="true">Overview</button>
+                  <button class="tab" type="button" role="tab" aria-selected="false">Models</button>
+                  <button class="tab" type="button" role="tab" aria-selected="false">API</button>
+                </div>
+                <div class="component-row">
+                  <span class="tag">Research</span>
+                  <span class="tag">Voice</span>
+                  <span class="badge">New</span>
+                </div>
+              </article>
+
+              <article class="card component-preview">
+                <h3>Modal, Toast, Empty State</h3>
+                <div class="modal-demo" role="dialog" aria-labelledby="modal-title" aria-modal="false">
+                  <p class="eyebrow">Dialog</p>
+                  <h3 id="modal-title">Confirm generation</h3>
+                  <p class="muted">Dialogs use card chrome, no shadow, clear actions, and focus management in production.</p>
+                  <div class="actions">
+                    <button class="button button-primary" type="button">Confirm</button>
+                    <button class="button" type="button">Cancel</button>
+                  </div>
+                </div>
+                <div class="toast" role="status">
+                  <span>Settings saved.</span>
+                  <button class="button icon-button" type="button" aria-label="Dismiss">×</button>
+                </div>
+                <div class="empty-state">
+                  <div>
+                    <p class="mono-sample">Empty state</p>
+                    <p>No assets yet. Create or upload to begin.</p>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Components</th>
+                    <th>Required States</th>
+                    <th>Implementation Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>基础组件</td>
+                    <td>Button, IconButton, Icon, Avatar, Tag, Badge, Divider</td>
+                    <td>Default, hover, active, focus, disabled; badges include neutral/info/warning/error/success</td>
+                    <td>Buttons use pill shape. Dividers use hairline only. Avatars stay circular and require accessible names.</td>
+                  </tr>
+                  <tr>
+                    <td>表单组件</td>
+                    <td>Input, Textarea, Select, Checkbox, Radio, Switch, Date Picker, Upload</td>
+                    <td>Empty, filled, focus, error, disabled, readonly, required, helper text, validation message</td>
+                    <td>Use native elements or accessible primitives first. Every field must support label, helper, error, and described-by wiring.</td>
+                  </tr>
+                  <tr>
+                    <td>导航组件</td>
+                    <td>Sidebar, Topbar, Menu, Tabs, Breadcrumb, Pagination, Stepper</td>
+                    <td>Current, expanded, collapsed, selected, disabled, overflow, keyboard focus</td>
+                    <td>Use semantic landmarks. Menus and tabs need arrow-key behavior when implemented as composite widgets.</td>
+                  </tr>
+                  <tr>
+                    <td>反馈组件</td>
+                    <td>Toast, Alert, Modal, Drawer, Tooltip, Popover, Loading, Progress</td>
+                    <td>Open, closed, entering, exiting, loading, success, warning, error, blocking/non-blocking</td>
+                    <td>Dialogs trap focus. Toasts use live regions. Tooltips are advisory only and must not contain required actions.</td>
+                  </tr>
+                  <tr>
+                    <td>数据展示</td>
+                    <td>Table, Card, List, Collapse, Empty State, Statistic, Chart Container, Timeline</td>
+                    <td>Loading, empty, populated, sorted, filtered, selected, partial failure, error</td>
+                    <td>Tables must define narrow-screen behavior. Charts require text summaries and never communicate status by color alone.</td>
+                  </tr>
+                  <tr>
+                    <td>页面模板</td>
+                    <td>Login, Dashboard, Settings, Profile, List Page, Detail Page, Form Page, Workspace</td>
+                    <td>Loading, empty, blocked, editable, read-only, error, success</td>
+                    <td>Templates compose blocks; they should expose data slots and not hide domain logic inside visuals.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Contract Area</th>
+                    <th>Required Convention</th>
+                    <th>Example</th>
+                    <th>Review Check</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Component naming</td>
+                    <td>PascalCase for components, kebab-case for CSS classes, semantic variant names.</td>
+                    <td><code>Button</code>, <code>ProjectListPage</code>, <code>.button-primary</code>, <code>variant="danger"</code></td>
+                    <td>No visual-only names such as <code>BigBlueButton</code> or <code>Card2</code>.</td>
+                  </tr>
+                  <tr>
+                    <td>Slots and parts</td>
+                    <td>Expose stable slots for compound components.</td>
+                    <td><code>data-slot="trigger"</code>, <code>data-slot="content"</code>, <code>data-slot="footer"</code></td>
+                    <td>Consumers can customize structure without reaching into private markup.</td>
+                  </tr>
+                  <tr>
+                    <td>State styling</td>
+                    <td>Use data attributes for visual states and ARIA for accessibility states.</td>
+                    <td><code>data-state="open"</code>, <code>data-disabled</code>, <code>aria-expanded="true"</code></td>
+                    <td>State is testable without depending on generated class names.</td>
+                  </tr>
+                  <tr>
+                    <td>Token usage</td>
+                    <td>No hardcoded colors, spacing, radius, or shadows inside components.</td>
+                    <td><code>color: var(--color-text-primary)</code>, <code>gap: var(--space-md)</code></td>
+                    <td>Style diffs should reference tokens except one-off demos in documentation.</td>
+                  </tr>
+                  <tr>
+                    <td>Accessibility</td>
+                    <td>Every interactive control has role/name/state; dialogs and popovers handle focus.</td>
+                    <td><code>aria-label</code>, <code>aria-describedby</code>, <code>role="dialog"</code></td>
+                    <td>Keyboard-only path covers open, operate, close, and recovery.</td>
+                  </tr>
+                  <tr>
+                    <td>Testing</td>
+                    <td>Each component gets render, state, keyboard, disabled, and error-state tests.</td>
+                    <td><code>Button disabled prevents submit</code>, <code>Dialog returns focus</code></td>
+                    <td>Tests assert behavior and accessible names, not only snapshots.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-2" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Recommended Component Shape</h3>
+                <pre><code>type ButtonProps = {
+  variant?: "primary" | "outline" | "ghost" | "danger";
+  size?: "sm" | "md" | "lg" | "icon";
+  loading?: boolean;
+  disabled?: boolean;
+  fullWidth?: boolean;
+};
+
+&lt;button
+  class="button"
+  data-variant="outline"
+  data-size="md"
+  data-state="idle"
+&gt;
+  Read announcement
+&lt;/button&gt;</code></pre>
+              </article>
+              <article class="card">
+                <h3>Definition Of Done</h3>
+                <ul class="list">
+                  <li>Uses semantic tokens, not raw hex values, in production component CSS.</li>
+                  <li>Documents when to use the component and when not to use it.</li>
+                  <li>Includes default, hover, focus, disabled, loading, empty, and error states where relevant.</li>
+                  <li>Passes keyboard and screen-reader checks for its interaction role.</li>
+                  <li>Defines responsive behavior before implementation lands.</li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="states" class="section">
+          <div class="container">
+            <p class="eyebrow">04 / States</p>
+            <h2>组件状态规范</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Component</th>
+                    <th>Required States</th>
+                    <th>Do</th>
+                    <th>Avoid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Button</td>
+                    <td>Default, hover, active, focus, disabled, loading, primary, outline, danger, icon-only, full width</td>
+                    <td>Keep shape pill; show focus ring; disable duplicate submissions.</td>
+                    <td>Mixing rectangles and pills in the same action family.</td>
+                  </tr>
+                  <tr>
+                    <td>Input</td>
+                    <td>Empty, filled, focus, error, disabled, readonly, helper text, validation message</td>
+                    <td>Use field-level messages and `aria-describedby`.</td>
+                    <td>Only showing errors through color.</td>
+                  </tr>
+                  <tr>
+                    <td>Modal</td>
+                    <td>Closed, opening, open, submitting, error</td>
+                    <td>Trap focus, close on Escape, return focus to trigger.</td>
+                    <td>Leaving background controls keyboard-focusable.</td>
+                  </tr>
+                  <tr>
+                    <td>Table</td>
+                    <td>Loading, empty, populated, sorted, filtered, selected, error</td>
+                    <td>Preserve header visibility and provide empty recovery actions.</td>
+                    <td>Rendering blank surfaces with no explanation.</td>
+                  </tr>
+                  <tr>
+                    <td>Toast</td>
+                    <td>Info, success, warning, error, dismissing</td>
+                    <td>Use polite live regions for non-critical feedback.</td>
+                    <td>Using toast for blocking decisions that require confirmation.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>State</th>
+                    <th>Button</th>
+                    <th>Input / Select</th>
+                    <th>Modal / Drawer</th>
+                    <th>Table / List</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Default</td>
+                    <td>Transparent or white-filled pill, 1px border, 40px min height.</td>
+                    <td>Canvas-soft fill, 8px radius, label above field.</td>
+                    <td>Card surface, title, body, footer actions.</td>
+                    <td>Visible headers, row borders, compact metadata.</td>
+                  </tr>
+                  <tr>
+                    <td>Hover</td>
+                    <td>Canvas-soft fill; no size shift.</td>
+                    <td>Border becomes stronger; no layout shift.</td>
+                    <td>Only actionable controls change; surface remains stable.</td>
+                    <td>Row background softens; selected state remains distinguishable.</td>
+                  </tr>
+                  <tr>
+                    <td>Focus</td>
+                    <td>2px focus ring using <code>--focus</code>, offset 3px.</td>
+                    <td>Focus ring plus <code>aria-describedby</code> when helper/error exists.</td>
+                    <td>Focus trapped inside; Escape closes non-destructive dialogs.</td>
+                    <td>Keyboard row focus visible; sortable headers announce sort state.</td>
+                  </tr>
+                  <tr>
+                    <td>Disabled / Readonly</td>
+                    <td>Opacity 42%, blocked pointer, reason nearby for critical actions.</td>
+                    <td>Disabled cannot focus; readonly can focus and copy.</td>
+                    <td>Submit action disabled while prerequisites fail.</td>
+                    <td>Disabled row actions still show why unavailable.</td>
+                  </tr>
+                  <tr>
+                    <td>Loading</td>
+                    <td>Spinner or text change; duplicate submit disabled.</td>
+                    <td>Field preserves value and can show inline progress for upload.</td>
+                    <td>Close rules explicit while submitting.</td>
+                    <td>Skeleton rows plus loading label; do not erase existing data unnecessarily.</td>
+                  </tr>
+                  <tr>
+                    <td>Error</td>
+                    <td>Danger variant only for destructive or failed actions.</td>
+                    <td><code>aria-invalid="true"</code>, visible message, not color-only.</td>
+                    <td>Error summary above footer; keep user input.</td>
+                    <td>Error row or empty-error state with retry action.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-3" style="margin-top: var(--space-lg)">
+              <article class="card component-preview">
+                <h3>Button State Set</h3>
+                <div class="component-row">
+                  <button class="button" type="button">Default</button>
+                  <button class="button" type="button" aria-busy="true">Loading</button>
+                  <button class="button button-primary" type="button">Primary</button>
+                  <button class="button button-danger" type="button">Danger</button>
+                  <button class="button" type="button" disabled>Disabled</button>
+                </div>
+              </article>
+              <article class="card component-preview">
+                <h3>Field State Set</h3>
+                <label class="field">
+                  <span class="label">Email</span>
+                  <input class="input" aria-invalid="true" aria-describedby="email-error" value="wrong@" />
+                  <span id="email-error" class="helper error">Enter a valid email address.</span>
+                </label>
+              </article>
+              <article class="card component-preview">
+                <h3>Progress State</h3>
+                <p class="helper">Use progress for long operations; include text because color alone is not enough.</p>
+                <div class="table-wrap">
+                  <table>
+                    <tbody>
+                      <tr><td>Queued</td><td><span class="tag">Waiting</span></td></tr>
+                      <tr><td>Running</td><td><span class="tag">42%</span></td></tr>
+                      <tr><td>Failed</td><td><span class="tag">Retry required</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="patterns" class="section">
+          <div class="container">
+            <p class="eyebrow">05 / Patterns</p>
+            <h2>模式与使用规范</h2>
+            <div class="grid-3">
+              <article class="card">
+                <h3>Form Validation</h3>
+                <p class="muted">Inline errors for field problems, toast for global failures, disabled state for unmet preconditions.</p>
+              </article>
+              <article class="card">
+                <h3>Destructive Confirm</h3>
+                <p class="muted">Danger actions require a confirmation dialog. Never hide destructive commands inside visual primary buttons.</p>
+              </article>
+              <article class="card">
+                <h3>Operational Gate</h3>
+                <p class="muted">Permissions, membership, credits, and missing data should block action with a precise reason and next step.</p>
+              </article>
+            </div>
+            <div class="do-dont" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Do</h3>
+                <ul class="list">
+                  <li>Use near-black canvas as the only page background.</li>
+                  <li>Use mono uppercase labels for section eyebrows and technical metadata.</li>
+                  <li>Let hairline borders carry structure.</li>
+                  <li>Keep interaction shapes consistent.</li>
+                </ul>
+              </article>
+              <article class="card">
+                <h3>Don't</h3>
+                <ul class="list">
+                  <li>Do not introduce light mode for this kit.</li>
+                  <li>Do not add shadows, glossy cards, gradients, or photo-heavy heroes.</li>
+                  <li>Do not use filled CTAs broadly.</li>
+                  <li>Do not rely on color alone for validation or status.</li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="responsive" class="section">
+          <div class="container">
+            <p class="eyebrow">06 / Responsive</p>
+            <h2>响应式规则</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Viewport</th>
+                    <th>Breakpoint</th>
+                    <th>Layout</th>
+                    <th>Navigation</th>
+                    <th>Data Display</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Desktop</td>
+                    <td>≥ 1100px</td>
+                    <td>Persistent side navigation, 1200px content container, 2-4 column grids.</td>
+                    <td>Sidebar remains visible; topbar keeps primary actions inline.</td>
+                    <td>Tables use full columns, sticky headers optional for dense pages.</td>
+                  </tr>
+                  <tr>
+                    <td>Tablet</td>
+                    <td>768px - 1099px</td>
+                    <td>Single app column or 2-column content where density remains readable.</td>
+                    <td>Sidebar moves above content or becomes compact rail.</td>
+                    <td>Tables may horizontally scroll; preserve first column and row actions.</td>
+                  </tr>
+                  <tr>
+                    <td>Mobile</td>
+                    <td>&lt; 768px</td>
+                    <td>One-column layout, reduced section padding, display type clamps to 48px or below.</td>
+                    <td>Navigation collapses to menu button or top segmented control; touch target min 44px.</td>
+                    <td>Dense tables become card lists when comparison is not essential; otherwise horizontal scroll with visible affordance.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="grid-3" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Modal To Drawer</h3>
+                <p class="muted">On desktop, dialogs may center with constrained width. On mobile, complex forms should become bottom or full-screen drawers with sticky footer actions.</p>
+              </article>
+              <article class="card">
+                <h3>Touch Targets</h3>
+                <p class="muted">Interactive targets must be at least 44 × 44px on touch devices. Icon-only buttons require accessible labels and visible focus state.</p>
+              </article>
+              <article class="card">
+                <h3>Text Rules</h3>
+                <p class="muted">Do not scale text with viewport width. Use explicit breakpoint sizes and line lengths; keep long words from overflowing controls.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="templates" class="section">
+          <div class="container">
+            <p class="eyebrow">07 / Page Templates</p>
+            <h2>页面模板</h2>
+            <div class="grid-2">
+              <article class="card">
+                <h3>App Shell</h3>
+                <div class="template-frame" aria-label="App shell template preview">
+                  <div class="template-side">
+                    <div class="placeholder-stack">
+                      <div class="placeholder-line" style="width: 72%"></div>
+                      <div class="placeholder-line" style="width: 54%"></div>
+                      <div class="placeholder-line" style="width: 62%"></div>
+                      <div class="placeholder-line" style="width: 46%"></div>
+                    </div>
+                  </div>
+                  <div class="template-main">
+                    <div class="status-grid">
+                      <div class="card"><p class="mono-sample">Metric</p><h3>128</h3></div>
+                      <div class="card"><p class="mono-sample">State</p><h3>Ready</h3></div>
+                      <div class="card"><p class="mono-sample">Cost</p><h3>23</h3></div>
+                      <div class="card"><p class="mono-sample">Queue</p><h3>04</h3></div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+              <article class="card">
+                <h3>Detail Workspace</h3>
+                <div class="template-frame" aria-label="Detail workspace template preview">
+                  <div class="template-side">
+                    <div class="empty-state">List / navigation</div>
+                  </div>
+                  <div class="template-main">
+                    <div class="grid-2">
+                      <div class="card"><p class="mono-sample">Preview</p><div class="empty-state">Canvas</div></div>
+                      <div class="card"><p class="mono-sample">Controls</p><div class="placeholder-stack"><div class="placeholder-line"></div><div class="placeholder-line" style="width:80%"></div><div class="placeholder-line" style="width:64%"></div></div></div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Template</th>
+                    <th>Purpose</th>
+                    <th>Required Blocks</th>
+                    <th>Responsive Behavior</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Login</td>
+                    <td>Move user into the product with trust and minimal friction.</td>
+                    <td>Brand mark, credential form, helper/error states, legal/help links.</td>
+                    <td>Single column on mobile; no decorative content that pushes form below fold.</td>
+                  </tr>
+                  <tr>
+                    <td>Dashboard</td>
+                    <td>Summarize operational state and next required action.</td>
+                    <td>Metric cards, status list, primary action, recent activity.</td>
+                    <td>Metrics collapse from 4-up to 2-up to 1-up.</td>
+                  </tr>
+                  <tr>
+                    <td>List Page</td>
+                    <td>Search, filter, scan, and act on collections.</td>
+                    <td>Toolbar, filters, table/card list, empty state, pagination.</td>
+                    <td>Filters wrap; table becomes horizontal scroll or card list.</td>
+                  </tr>
+                  <tr>
+                    <td>Detail Page</td>
+                    <td>Expose one entity's status, metadata, and local actions.</td>
+                    <td>Header, status summary, tabs/sections, audit or activity panel.</td>
+                    <td>Side panels stack below primary content.</td>
+                  </tr>
+                  <tr>
+                    <td>Form Page</td>
+                    <td>Capture structured input with validation and recovery.</td>
+                    <td>Field groups, helper text, validation summary, sticky action footer.</td>
+                    <td>Single column; footer actions remain reachable.</td>
+                  </tr>
+                  <tr>
+                    <td>Settings / Profile</td>
+                    <td>Configure account, workspace, billing, and preferences.</td>
+                    <td>Section nav, grouped forms, destructive action area.</td>
+                    <td>Section nav becomes top tabs or stacked anchors.</td>
+                  </tr>
+                  <tr>
+                    <td>Production Workspace</td>
+                    <td>Support repeated expert work with context, preview, and controls visible.</td>
+                    <td>Left list, central preview, right parameter panel, status footer.</td>
+                    <td>Mobile stacks list, preview, controls; do not hide critical status.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Component</th>
+                    <th>Anatomy</th>
+                    <th>Variants / Sizes</th>
+                    <th>Behavior And A11y</th>
+                    <th>Responsive Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Avatar</td>
+                    <td>Root, image, fallback initials, status badge.</td>
+                    <td>24, 32, 40, 56px; circle only.</td>
+                    <td>Decorative avatars use empty alt; identity avatars need readable names.</td>
+                    <td>Collapse stacked avatar groups to +N overflow badge.</td>
+                  </tr>
+                  <tr>
+                    <td>Checkbox / Radio / Switch</td>
+                    <td>Control, indicator, label, helper/error text.</td>
+                    <td>Checked, unchecked, indeterminate, disabled, error.</td>
+                    <td>Prefer native inputs visually styled; label must toggle control.</td>
+                    <td>Increase hit area to 44px on touch screens.</td>
+                  </tr>
+                  <tr>
+                    <td>Date Picker</td>
+                    <td>Trigger input, calendar popover, month nav, grid, footer actions.</td>
+                    <td>Single date, range, disabled dates, error, readonly.</td>
+                    <td>Calendar grid needs arrow-key navigation and announced selected date.</td>
+                    <td>Use full-screen drawer on mobile for range selection.</td>
+                  </tr>
+                  <tr>
+                    <td>Upload</td>
+                    <td>Dropzone, file list, progress, error, retry/remove actions.</td>
+                    <td>Idle, drag-over, uploading, uploaded, failed, disabled.</td>
+                    <td>File input remains accessible; accepted types and max size visible.</td>
+                    <td>File list becomes stacked cards; progress text stays visible.</td>
+                  </tr>
+                  <tr>
+                    <td>Menu / Popover / Tooltip</td>
+                    <td>Trigger, content, arrow optional, item list, separator.</td>
+                    <td>Open, closed, highlighted, disabled, destructive item.</td>
+                    <td>Menus support Escape and arrow keys; tooltips contain no required action.</td>
+                    <td>Popover can become drawer when content exceeds viewport.</td>
+                  </tr>
+                  <tr>
+                    <td>Drawer / Modal</td>
+                    <td>Overlay, content, header, body, footer, close control.</td>
+                    <td>Default, destructive, form, loading, error, full-screen.</td>
+                    <td>Trap focus, inert background, return focus to trigger.</td>
+                    <td>Modal becomes bottom/full-screen drawer on small screens.</td>
+                  </tr>
+                  <tr>
+                    <td>Loading / Progress</td>
+                    <td>Spinner or bar, label, value, helper text.</td>
+                    <td>Indeterminate, determinate, success, warning, error.</td>
+                    <td>Use <code>aria-busy</code> or progressbar semantics and text value.</td>
+                    <td>Never hide progress text in compact layouts.</td>
+                  </tr>
+                  <tr>
+                    <td>Pagination / Breadcrumb / Stepper</td>
+                    <td>Landmark, items, current marker, previous/next controls.</td>
+                    <td>Default, compact, disabled edges, overflow ellipsis.</td>
+                    <td>Current page/step uses <code>aria-current</code>.</td>
+                    <td>Pagination compacts to prev/current/next; breadcrumbs truncate middle.</td>
+                  </tr>
+                  <tr>
+                    <td>Collapse / List / Timeline</td>
+                    <td>Header, trigger, content region, item metadata.</td>
+                    <td>Open, closed, nested, loading, empty, error.</td>
+                    <td>Trigger exposes <code>aria-expanded</code> and controls region ID.</td>
+                    <td>Timeline metadata stacks under title on mobile.</td>
+                  </tr>
+                  <tr>
+                    <td>Statistic / Chart Container</td>
+                    <td>Title, value, delta, chart area, legend, summary.</td>
+                    <td>Neutral, positive, warning, negative, loading, no data.</td>
+                    <td>Charts require text summary and accessible legend.</td>
+                    <td>Legend wraps; chart keeps minimum height and readable labels.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Core Component</th>
+                    <th>Anatomy</th>
+                    <th>Variants / States</th>
+                    <th>Behavior And A11y</th>
+                    <th>Responsive Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Button</td>
+                    <td>Root, optional leading icon, label, optional trailing icon/loading spinner.</td>
+                    <td>Primary, outline, ghost, danger; sm/md/lg/icon/full-width; default, hover, active, focus, disabled, loading.</td>
+                    <td>Use native button for actions; loading disables duplicate submit and announces busy state.</td>
+                    <td>Full-width only in narrow forms or stacked action footers.</td>
+                  </tr>
+                  <tr>
+                    <td>IconButton</td>
+                    <td>Button root, centered icon, accessible name, optional badge.</td>
+                    <td>Default, selected, danger, disabled, loading; 32/40/44px.</td>
+                    <td>Requires <code>aria-label</code>; never use icon-only for unfamiliar primary actions.</td>
+                    <td>Minimum touch target becomes 44px on touch screens.</td>
+                  </tr>
+                  <tr>
+                    <td>Icon</td>
+                    <td>SVG root, path strokes, optional title for standalone meaning.</td>
+                    <td>16/20/24px; decorative, semantic, action.</td>
+                    <td>Decorative icons use <code>aria-hidden</code>; semantic icons have labels or adjacent text.</td>
+                    <td>Do not shrink below 16px; preserve stroke weight across breakpoints.</td>
+                  </tr>
+                  <tr>
+                    <td>Tag</td>
+                    <td>Root pill, text, optional icon, optional remove action.</td>
+                    <td>Neutral, accent, removable, selected, disabled.</td>
+                    <td>Removable tag exposes a named remove button.</td>
+                    <td>Tags wrap; do not compress text below readability.</td>
+                  </tr>
+                  <tr>
+                    <td>Badge</td>
+                    <td>Root, label, optional count/dot.</td>
+                    <td>Neutral, info, success, warning, error; dot/count/text.</td>
+                    <td>Status badges include text, not color alone.</td>
+                    <td>Counts may compact to 99+; labels should not truncate critical status.</td>
+                  </tr>
+                  <tr>
+                    <td>Divider</td>
+                    <td>Line, optional label, orientation.</td>
+                    <td>Horizontal, vertical, labeled, inset.</td>
+                    <td>Decorative dividers are hidden from assistive tech; section separators use semantic headings nearby.</td>
+                    <td>Vertical dividers become horizontal in stacked layouts.</td>
+                  </tr>
+                  <tr>
+                    <td>Input</td>
+                    <td>Label, control, optional prefix/suffix icon, helper, error.</td>
+                    <td>Empty, filled, focus, error, disabled, readonly, required.</td>
+                    <td>Use <code>aria-describedby</code> for helper/error and <code>aria-invalid</code> for validation.</td>
+                    <td>Fields become full-width; icon actions remain 44px touch targets.</td>
+                  </tr>
+                  <tr>
+                    <td>Textarea</td>
+                    <td>Label, multiline control, counter, helper/error.</td>
+                    <td>Empty, filled, focus, error, disabled, readonly, autosize/manual resize.</td>
+                    <td>Character limits must be visible and announced when exceeded.</td>
+                    <td>Minimum height increases for writing tasks; avoid tiny mobile text areas.</td>
+                  </tr>
+                  <tr>
+                    <td>Select</td>
+                    <td>Label, trigger, value, chevron, popover/listbox, option items.</td>
+                    <td>Single, searchable, disabled options, error, loading.</td>
+                    <td>Use native select or listbox semantics with keyboard search and selected state.</td>
+                    <td>Long option lists become drawer/list sheet on mobile.</td>
+                  </tr>
+                  <tr>
+                    <td>Sidebar</td>
+                    <td>Landmark, nav groups, nav items, active marker, footer account area.</td>
+                    <td>Expanded, collapsed rail, active, disabled, nested.</td>
+                    <td>Uses <code>nav</code> with labels and <code>aria-current</code> for current page.</td>
+                    <td>Moves to top menu or drawer below tablet breakpoint.</td>
+                  </tr>
+                  <tr>
+                    <td>Topbar</td>
+                    <td>Title/breadcrumb area, primary actions, utility actions, account menu.</td>
+                    <td>Default, dense, sticky, scrolled, action-overflow.</td>
+                    <td>Primary page action remains discoverable and keyboard reachable.</td>
+                    <td>Secondary actions collapse into overflow menu.</td>
+                  </tr>
+                  <tr>
+                    <td>Tabs</td>
+                    <td>Tablist, tab triggers, panels, optional count badges.</td>
+                    <td>Horizontal, segmented, disabled tab, overflow, selected.</td>
+                    <td>Use tablist semantics when panels switch in place; arrow keys move between tabs.</td>
+                    <td>Tabs scroll horizontally or become select when labels overflow.</td>
+                  </tr>
+                  <tr>
+                    <td>Toast</td>
+                    <td>Viewport, toast item, title/message, optional action, dismiss.</td>
+                    <td>Info, success, warning, error, loading, dismissing.</td>
+                    <td>Use polite live region for normal updates; alert role only for urgent errors.</td>
+                    <td>Stacks from bottom/top edge; width fits viewport with safe margins.</td>
+                  </tr>
+                  <tr>
+                    <td>Alert</td>
+                    <td>Container, icon, title, message, optional action.</td>
+                    <td>Info, success, warning, error, neutral, inline/blocking.</td>
+                    <td>Critical alerts use role alert and plain-language recovery steps.</td>
+                    <td>Actions wrap below message on narrow screens.</td>
+                  </tr>
+                  <tr>
+                    <td>Table</td>
+                    <td>Table, header, row, cell, selection, sort, row actions, empty state.</td>
+                    <td>Loading, empty, sorted, filtered, selected, error, dense.</td>
+                    <td>Use real table markup for tabular data; sortable headers expose <code>aria-sort</code>.</td>
+                    <td>Horizontal scroll for comparison; card-list fallback for simple records.</td>
+                  </tr>
+                  <tr>
+                    <td>Card</td>
+                    <td>Root, header, title, body, media/preview, footer actions.</td>
+                    <td>Default, interactive, selected, disabled, loading, error.</td>
+                    <td>Interactive cards still expose explicit buttons/links for actions.</td>
+                    <td>Cards stack one-up and keep stable aspect ratios for media areas.</td>
+                  </tr>
+                  <tr>
+                    <td>Empty State</td>
+                    <td>Illustration/icon, title, message, primary action, secondary action.</td>
+                    <td>No data, no permission, filtered empty, error empty.</td>
+                    <td>Copy explains why empty and what to do next.</td>
+                    <td>Keep action visible above fold when possible.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="accessibility" class="section">
+          <div class="container">
+            <p class="eyebrow">08 / Accessibility</p>
+            <h2>可访问性规则</h2>
+            <div class="grid-3">
+              <article class="card">
+                <h3>Semantic first</h3>
+                <p class="muted">Buttons use `<button>`, navigation uses `<nav>`, tablists expose `role="tablist"` and selected state.</p>
+              </article>
+              <article class="card">
+                <h3>Keyboard complete</h3>
+                <p class="muted">Every interactive element must be reachable by keyboard. Dialogs need Escape, focus trap, and focus return.</p>
+              </article>
+              <article class="card">
+                <h3>Contrast and focus</h3>
+                <p class="muted">Dark surfaces require high contrast text and visible focus rings. Do not rely only on accent color.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="component-system" class="section">
+          <div class="container">
+            <p class="eyebrow">09 / Component System</p>
+            <h2>设计系统 → 组件系统开发指南</h2>
+            <p class="lead">
+              把设计师给出的视觉规范转化成稳定、可复用、可组合、可治理的前端组件体系。目标不是照着设计稿写 UI，而是建立一套能长期支撑产品演进的代码资产。
+            </p>
+
+            <div class="grid-4" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>一致性</h3>
+                <p class="muted">同一种视觉和交互在全局表现一致，避免页面各自发明按钮、表单和反馈。</p>
+              </article>
+              <article class="card">
+                <h3>复用性</h3>
+                <p class="muted">高频 UI 由组件资产承载，业务开发组合组件而不是重复造控件。</p>
+              </article>
+              <article class="card">
+                <h3>可维护性</h3>
+                <p class="muted">修改 token 或基础组件即可影响全局，而不是在页面里四处改样式。</p>
+              </article>
+              <article class="card">
+                <h3>可演进性</h3>
+                <p class="muted">主题、国际化、响应式和业务扩展都基于稳定边界演进，不推倒重来。</p>
+              </article>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Layer</th>
+                    <th>Responsibility</th>
+                    <th>Examples</th>
+                    <th>Must Not Do</th>
+                    <th>Outputs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Design Tokens</td>
+                    <td>把颜色、字号、间距、圆角、边框、层级、动效、断点转成代码原子。</td>
+                    <td><code>color.bg.canvas</code>, <code>space.md</code>, <code>radius.control</code>, <code>motion.fast</code></td>
+                    <td>不要在组件里使用裸色值、魔法间距或一次性圆角。</td>
+                    <td><code>tokens.ts</code>, <code>theme.css</code>, Tailwind/Figma 映射, 禁用裸值规范。</td>
+                  </tr>
+                  <tr>
+                    <td>Primitive Components</td>
+                    <td>无业务语义的基础 UI 控件，承担状态、键盘、ARIA、表单兼容和响应式基础表现。</td>
+                    <td>Button, Input, Select, Checkbox, Modal, Tooltip, Tabs, Badge, Avatar, Spinner</td>
+                    <td>不要绑定业务提交、权限判断、订单状态或具体 API。</td>
+                    <td>源码、Props 类型、Storybook、基础交互测试、可访问性检查。</td>
+                  </tr>
+                  <tr>
+                    <td>Composite Components</td>
+                    <td>由多个 Primitive 组成的通用业务无关模式，解决场景一致性。</td>
+                    <td>PageHeader, EmptyState, DataTable, FilterPanel, ConfirmDialog, FormSection, UploadPanel</td>
+                    <td>不要直接请求业务 API；不要把用户、订单、计费等业务语义写入 shared 组件。</td>
+                    <td>复合组件库、插槽规范、典型页面模板、复用场景说明。</td>
+                  </tr>
+                  <tr>
+                    <td>Feature Components</td>
+                    <td>带明确业务语义的模块，封装业务 UI、状态、hooks、API 和错误处理。</td>
+                    <td>UserPermissionEditor, OrderTable, BillingSummary, InvoicePreview</td>
+                    <td>不要污染 Primitive/Composite；不要把页面写成业务逻辑堆叠。</td>
+                    <td>Feature 目录、业务 hooks、业务类型、API 封装、页面编排代码。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-2" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Layer Decision Table</h3>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Question</th>
+                        <th>Layer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>是颜色、间距、字体、圆角、动效或断点吗？</td><td>Token</td></tr>
+                      <tr><td>是按钮、输入框、弹窗这类基础控件吗？</td><td>Primitive</td></tr>
+                      <tr><td>是多个基础控件组成的通用结构吗？</td><td>Composite</td></tr>
+                      <tr><td>是否包含业务语义或请求具体业务 API？</td><td>Feature</td></tr>
+                      <tr><td>是否只是某个页面临时需要？</td><td>Page 内部组件</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+              <article class="card">
+                <h3>Directory Contract</h3>
+                <pre><code>src/
+  shared/
+    tokens/        # Design Tokens
+    ui/            # Primitive Components
+    components/    # Composite Components
+  features/
+    project/
+      api/
+      hooks/
+      components/  # Feature Components
+      types.ts
+      index.ts
+  pages/           # Page orchestration only</code></pre>
+              </article>
+            </div>
+
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Development Step</th>
+                    <th>Required Decision</th>
+                    <th>Deliverable</th>
+                    <th>Quality Gate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>1. 判断层级</td>
+                    <td>Token / Primitive / Composite / Feature / Page internal。</td>
+                    <td>组件归属说明。</td>
+                    <td>业务语义不得进入 shared Primitive。</td>
+                  </tr>
+                  <tr>
+                    <td>2. 定义职责</td>
+                    <td>一句话说明负责什么、不负责什么。</td>
+                    <td>组件 README 或 Storybook notes。</td>
+                    <td>边界不清不得实现。</td>
+                  </tr>
+                  <tr>
+                    <td>3. 设计 API</td>
+                    <td>语义化 props、插槽、受控/非受控状态、默认值。</td>
+                    <td>Props 类型与使用示例。</td>
+                    <td>不得暴露 <code>color="#..."</code>、<code>padding="13px"</code> 这类设计细节。</td>
+                  </tr>
+                  <tr>
+                    <td>4. 覆盖状态</td>
+                    <td>Default, hover, active, focus, disabled, loading, error, readonly。</td>
+                    <td>状态矩阵和视觉/ARIA 规范。</td>
+                    <td>只做正常态不允许合并。</td>
+                  </tr>
+                  <tr>
+                    <td>5. 写 Storybook</td>
+                    <td>默认态、variants、sizes、disabled、loading、error、长文本、响应式。</td>
+                    <td>Storybook stories。</td>
+                    <td>基础组件必须可独立审查和讨论。</td>
+                  </tr>
+                  <tr>
+                    <td>6. 写测试</td>
+                    <td>Primitive 测交互/ARIA；Composite 测插槽/空态；Feature 测业务状态/API。</td>
+                    <td>组件测试。</td>
+                    <td>测试行为和 accessible name，不只测快照。</td>
+                  </tr>
+                  <tr>
+                    <td>7. 写使用规范</td>
+                    <td>什么时候用、什么时候不用、错误用法、可访问性说明。</td>
+                    <td>组件文档。</td>
+                    <td>必须写“不要怎么用”。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="grid-2" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Primitive API Standard</h3>
+                <pre><code>type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "md" | "lg";
+
+type ButtonProps = {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  loading?: boolean;
+  disabled?: boolean;
+  fullWidth?: boolean;
+  children: React.ReactNode;
+};</code></pre>
+                <p class="helper">组件 API 表达用途语义，不表达视觉细节。Variant 来自设计系统，不自由发挥。</p>
+              </article>
+              <article class="card">
+                <h3>Composition Over Configuration</h3>
+                <pre><code>&lt;Card&gt;
+  &lt;Card.Header&gt;
+    &lt;UserInfo /&gt;
+  &lt;/Card.Header&gt;
+  &lt;Card.Body&gt;...&lt;/Card.Body&gt;
+  &lt;Card.Footer&gt;
+    &lt;Button&gt;Edit&lt;/Button&gt;
+  &lt;/Card.Footer&gt;
+&lt;/Card&gt;</code></pre>
+                <p class="helper">长期来看，组合能力比把所有场景塞进 props 更健康。</p>
+              </article>
+            </div>
+
+            <div class="grid-3" style="margin-top: var(--space-lg)">
+              <article class="card">
+                <h3>Governance Rule 1</h3>
+                <p class="muted">按钮必须用 Button，输入框必须用 Input，弹窗必须用 Modal，颜色和间距必须用 Token。禁止绕过组件库。</p>
+              </article>
+              <article class="card">
+                <h3>Governance Rule 2</h3>
+                <p class="muted">新增组件前先判断已有组件能否满足；是新 variant、Composite，还是 Feature 内部组件。</p>
+              </article>
+              <article class="card">
+                <h3>Governance Rule 3</h3>
+                <p class="muted">定期复盘高频组件、无人使用组件、props 过多组件、className 大量覆盖和可上升抽象的业务组件。</p>
+              </article>
+            </div>
+
+            <div class="card" style="margin-top: var(--space-lg)">
+              <h3>Final Standard</h3>
+              <p class="muted">
+                优质组件系统应达到：设计变量统一、基础组件稳定、复合组件高频复用、业务组件边界清晰、页面只做编排、样式不随意散落、状态覆盖完整、文档和示例齐全、测试覆盖关键行为、长期演进有治理机制。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="implementation" class="section">
+          <div class="container">
+            <p class="eyebrow">10 / Development</p>
+            <h2>设计与开发协作规则</h2>
+            <div class="grid-2">
+              <article class="card">
+                <h3>CSS Variable Mapping</h3>
+                <pre><code>:root {
+  --color-canvas: #0a0a0a;
+  --color-ink: #ffffff;
+  --color-canvas-card: #191919;
+  --space-lg: 16px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+}</code></pre>
+              </article>
+              <article class="card">
+                <h3>Component API Guidance</h3>
+                <pre><code>&lt;Button variant="outline" size="md"&gt;Read&lt;/Button&gt;
+&lt;Button variant="primary" loading&gt;Sign up&lt;/Button&gt;
+&lt;Dialog title="Confirm action" onOpenChange={...}&gt;
+  ...
+&lt;/Dialog&gt;</code></pre>
+              </article>
+            </div>
+            <div class="table-wrap" style="margin-top: var(--space-lg)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Layer</th>
+                    <th>Artifact</th>
+                    <th>Rule</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Primitive</td>
+                    <td>Dialog, Popover, Tooltip, Tabs</td>
+                    <td>Own behavior, ARIA, keyboard interaction, and focus management.</td>
+                  </tr>
+                  <tr>
+                    <td>Component</td>
+                    <td>Button, Input, Select, Card, Toast, Table</td>
+                    <td>Styled reusable units using semantic tokens and documented states.</td>
+                  </tr>
+                  <tr>
+                    <td>Pattern</td>
+                    <td>Form validation, destructive confirm, permission gate</td>
+                    <td>Document behavior, failure modes, and recovery paths.</td>
+                  </tr>
+                  <tr>
+                    <td>Template</td>
+                    <td>App shell, detail workspace, dashboard, settings</td>
+                    <td>Combine components into route-level structures with responsive rules.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
