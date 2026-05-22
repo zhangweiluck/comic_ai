@@ -5,6 +5,7 @@ export interface ShotRecord {
   organizationId: string;
   projectId: string;
   title: string;
+  sortOrder: number;
   contentRevision: number;
   contentStatus: "draft" | "ready" | "stale";
   imageStatus: "draft" | "ready" | "generating" | "completed" | "failed" | "stale";
@@ -37,6 +38,7 @@ export class InMemoryShotStore {
       organizationId: input.organizationId,
       projectId: input.projectId,
       title: input.title,
+      sortOrder: 0,
       contentRevision: 1,
       contentStatus: "ready",
       imageStatus: "ready",
@@ -60,6 +62,10 @@ export class InMemoryShotStore {
 
   async findShot(shotId: string): Promise<ShotRecord | undefined> {
     return this.shotsById.get(shotId);
+  }
+
+  async deleteShot(shotId: string): Promise<void> {
+    this.shotsById.delete(shotId);
   }
 
   async saveShot(shot: ShotRecord): Promise<ShotRecord> {

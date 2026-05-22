@@ -8,6 +8,7 @@ interface ShotRow {
   organization_id: string;
   project_id: string;
   title: string;
+  sort_order: number | string;
   content_revision: number;
   content_status: ShotRecord["contentStatus"];
   image_status: ShotRecord["imageStatus"];
@@ -97,7 +98,7 @@ export async function listShotsForProject(
       FROM shots
       WHERE organization_id = $1
         AND project_id = $2
-      ORDER BY created_at, id
+      ORDER BY sort_order ASC, created_at ASC, id ASC
     `,
     [input.organizationId, input.projectId],
   );
@@ -122,6 +123,7 @@ async function insertOrUpdateShot(
         organization_id,
         project_id,
         title,
+        sort_order,
         content_revision,
         content_status,
         image_status,
@@ -137,11 +139,12 @@ async function insertOrUpdateShot(
         updated_at
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15, $16, $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, $14, $15, $16, $17, $17
       )
       ON CONFLICT (id) DO UPDATE
       SET title = EXCLUDED.title,
+          sort_order = EXCLUDED.sort_order,
           content_revision = EXCLUDED.content_revision,
           content_status = EXCLUDED.content_status,
           image_status = EXCLUDED.image_status,
@@ -159,6 +162,7 @@ async function insertOrUpdateShot(
       input.organizationId,
       input.projectId,
       input.shot.title,
+      (input.shot as ShotRecord & { sortOrder?: number }).sortOrder ?? 0,
       input.shot.contentRevision,
       input.shot.contentStatus,
       input.shot.imageStatus,
@@ -181,6 +185,7 @@ function shotFromRow(row: ShotRow): ShotRecord {
     organizationId: row.organization_id,
     projectId: row.project_id,
     title: row.title,
+    sortOrder: Number(row.sort_order),
     contentRevision: row.content_revision,
     contentStatus: row.content_status,
     imageStatus: row.image_status,

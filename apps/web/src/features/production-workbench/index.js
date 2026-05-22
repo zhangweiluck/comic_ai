@@ -33,6 +33,18 @@ export async function initProductionWorkbench({ root, session, api, onLogout }) 
       projectLibrary: [],
       projectSearchQuery: "",
       projectLibraryPage: 1,
+      projectStatusMenuOpen: false,
+      projectStatusFilters: [],
+      projectCardMenuId: null,
+      projectInteriorStatusMenuOpen: false,
+      projectInteriorSection: "overview",
+      projectAssetTab: "character",
+      projectOtherAssetMediaType: "video",
+      assetGeneratorModal: null,
+      renameProjectId: null,
+      renameProjectName: "",
+      renameProjectNotice: "",
+      deleteProjectId: null,
       selectedProjectCardId: null,
       isScriptModalOpen: false,
       scriptTab: "script-upload",
@@ -42,6 +54,13 @@ export async function initProductionWorkbench({ root, session, api, onLogout }) 
       defaultScript: DEFAULT_SCRIPT,
       storyboards: [],
       selectedStoryboardId: null,
+      calibrationSkipReason: "",
+      calibrationOverrideReason: "",
+      lastCalibrationResult: null,
+      exportHistory: [],
+      imageGenerationResult: null,
+      videoGenerationResult: null,
+      exportPreviewResult: null,
       activeNavTab: deriveInitialNavTab(window.location.hash),
       projectPanelMode: deriveInitialProjectPanelMode(window.location.hash),
     },
@@ -52,11 +71,15 @@ export async function initProductionWorkbench({ root, session, api, onLogout }) 
     if (!target) {
       return;
     }
+    if (target.matches?.('input[data-action="upload-project-cover"]')) {
+      return;
+    }
     void handleAction(workbench, target);
   });
 
-  root.addEventListener("change", (event) => {
+  root.addEventListener("change", async (event) => {
     const target = event.target;
+
     if (target?.matches?.("[data-model-choice]")) {
       workbench.ui.selectedModelId = target.value;
       workbench.ui.toast = `已选择 ${target.options[target.selectedIndex]?.text ?? target.value}。`;
@@ -80,20 +103,86 @@ export async function initProductionWorkbench({ root, session, api, onLogout }) 
     if (target?.matches?.('input[name="project-type"]')) {
       workbench.ui.createProjectType = target.value;
       render(workbench);
+      return;
+    }
+
+    if (target?.matches?.('input[name="project-status-filter"]')) {
+      const next = new Set(workbench.ui.projectStatusFilters ?? []);
+      if (target.checked) {
+        next.add(target.value);
+      } else {
+        next.delete(target.value);
+      }
+      workbench.ui.projectStatusFilters = [...next];
+      workbench.ui.projectLibraryPage = 1;
+      render(workbench);
+      return;
+    }
+
+    if (target?.matches?.('input[data-action="upload-project-cover"]')) {
+      const [file] = [...(target.files ?? [])];
+      if (!file) {
+        return;
+      }
+
+      const projectId = target.dataset.projectId ?? null;
+      const coverImageUrl = await readFileAsDataUrl(file);
+      target.value = "";
+      workbench.ui.projectCardMenuId = null;
+      await runAction(workbench, "正在更新项目封面...", async () => {
+        await workbench.api.updateProjectCover({
+          projectId,
+          coverImageUrl,
+        });
+      });
+      return;
     }
   });
 
   root.addEventListener("input", (event) => {
     const target = event.target;
+
     if (target?.matches?.("#video-prompt-input")) {
       workbench.ui.prompt = target.value;
+      return;
     }
+
     if (target?.matches?.("#script-input")) {
       workbench.ui.defaultScript = target.value;
+      return;
     }
+
+    if (target?.matches?.("#calibration-skip-reason-input")) {
+      workbench.ui.calibrationSkipReason = target.value;
+      return;
+    }
+
+    if (target?.matches?.("#calibration-override-reason-input")) {
+      workbench.ui.calibrationOverrideReason = target.value;
+      return;
+    }
+
     if (target?.matches?.("#project-create-name-input")) {
       workbench.ui.createProjectName = target.value;
+      return;
     }
+
+    if (target?.matches?.("#project-rename-name-input")) {
+      workbench.ui.renameProjectName = target.value;
+      if (workbench.ui.renameProjectNotice) {
+        workbench.ui.renameProjectNotice = "";
+      }
+      const counter = workbench.root.querySelector(".rename-project-count");
+      if (counter) {
+        counter.textContent = `${[...target.value].length}`;
+      }
+      const notice = workbench.root.querySelector(".rename-project-actions .modal-inline-status");
+      if (notice) {
+        notice.textContent = "";
+      }
+      return;
+    }
+
     if (target?.matches?.('[data-action="search-projects"]')) {
       workbench.ui.projectSearchQuery = target.value;
       workbench.ui.projectLibraryPage = 1;
@@ -107,7 +196,10 @@ export async function initProductionWorkbench({ root, session, api, onLogout }) 
 
 async function refresh(workbench) {
   workbench.state = await workbench.api.getCreatorState();
-  seedProjectLibrary(workbench);
+  await syncProjectLibraryFromApi(workbench);
+  workbench.ui.exportHistory = workbench.state.project
+    ? await loadExportHistory(workbench)
+    : [];
   const nextStoryboards = syncStoryboards(
     workbench.ui.storyboards,
     createStoryboardList(workbench.state),
@@ -121,6 +213,18 @@ async function refresh(workbench) {
     !nextStoryboards.some((storyboard) => storyboard.id === workbench.ui.selectedStoryboardId)
   ) {
     workbench.ui.selectedStoryboardId = nextStoryboards[0]?.id ?? null;
+  }
+}
+
+async function loadExportHistory(workbench) {
+  try {
+    const payload = await workbench.api.getExportHistory();
+    return Array.isArray(payload.records) ? payload.records : [];
+  } catch (error) {
+    if (String(error instanceof Error ? error.message : error).includes("creator_project_missing")) {
+      return [];
+    }
+    throw error;
   }
 }
 
@@ -147,7 +251,16 @@ async function handleAction(workbench, target) {
   }
 
   if (action === "logout") {
-    await runAction(workbench, "正在退出登录...", () => workbench.onLogout?.());
+    workbench.ui.busy = true;
+    workbench.ui.toast = "正在退出登录...";
+    render(workbench);
+    try {
+      await workbench.onLogout?.();
+    } catch (error) {
+      workbench.ui.busy = false;
+      workbench.ui.toast = `退出登录失败：${friendlyError(error)}`;
+      render(workbench);
+    }
     return;
   }
 
@@ -155,8 +268,12 @@ async function handleAction(workbench, target) {
     workbench.ui.activeNavTab = target.dataset.tab ?? "home";
     workbench.ui.projectPanelMode =
       workbench.ui.activeNavTab === "project" ? "library" : workbench.ui.projectPanelMode;
-    workbench.ui.toast = `已切换到${navTabLabel(workbench.ui.activeNavTab)}。`;
+    workbench.ui.projectInteriorStatusMenuOpen = false;
+    workbench.ui.toast = `已切换到 ${navTabLabel(workbench.ui.activeNavTab)}。`;
     window.location.hash = workbench.ui.activeNavTab === "home" ? "home" : workbench.ui.activeNavTab;
+    if (workbench.ui.activeNavTab === "project") {
+      await syncProjectLibraryFromApi(workbench);
+    }
     render(workbench);
     return;
   }
@@ -211,30 +328,218 @@ async function handleAction(workbench, target) {
     workbench.ui.selectedProjectCardId = projectId;
     workbench.ui.activeNavTab = "project";
     workbench.ui.projectPanelMode = "workspace";
+    workbench.ui.projectInteriorStatusMenuOpen = false;
+    workbench.ui.projectInteriorSection = "overview";
+    workbench.ui.assetGeneratorModal = null;
     workbench.ui.toast = "已进入项目工作台。";
     window.location.hash = "storyboard-workbench";
     render(workbench);
     return;
   }
 
+  if (action === "toggle-project-status-menu") {
+    workbench.ui.projectStatusMenuOpen = !workbench.ui.projectStatusMenuOpen;
+    render(workbench);
+    return;
+  }
+
+  if (action === "toggle-project-interior-status-menu") {
+    workbench.ui.projectInteriorStatusMenuOpen = !workbench.ui.projectInteriorStatusMenuOpen;
+    render(workbench);
+    return;
+  }
+
+  if (action === "set-project-interior-section") {
+    workbench.ui.projectInteriorSection = target.dataset.section ?? "overview";
+    workbench.ui.projectInteriorStatusMenuOpen = false;
+    workbench.ui.assetGeneratorModal = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "open-project-asset-tab") {
+    workbench.ui.projectInteriorSection = "assets";
+    workbench.ui.projectAssetTab = target.dataset.assetKind ?? "character";
+    workbench.ui.projectInteriorStatusMenuOpen = false;
+    workbench.ui.assetGeneratorModal = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "set-project-asset-tab") {
+    workbench.ui.projectAssetTab = target.dataset.assetTab ?? "character";
+    workbench.ui.projectInteriorStatusMenuOpen = false;
+    render(workbench);
+    return;
+  }
+
+  if (action === "set-project-other-asset-media") {
+    workbench.ui.projectOtherAssetMediaType = target.dataset.mediaType ?? "video";
+    render(workbench);
+    return;
+  }
+
+  if (action === "open-asset-generator-modal") {
+    workbench.ui.assetGeneratorModal = target.dataset.assetKind ?? workbench.ui.projectAssetTab ?? "character";
+    render(workbench);
+    return;
+  }
+
+  if (action === "close-asset-generator-modal") {
+    workbench.ui.assetGeneratorModal = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "set-project-interior-status") {
+    const projectId = workbench.ui.selectedProjectCardId;
+    const nextStatus = target.dataset.status ?? "制作中";
+    await runAction(workbench, "正在更新项目状态...", async () => {
+      await workbench.api.updateProject({
+        projectId,
+        phase: projectStatusToPhase(nextStatus),
+      });
+      workbench.ui.projectInteriorStatusMenuOpen = false;
+    });
+    return;
+  }
+
+  if (action === "change-project-page") {
+    const nextPage = Number(target.dataset.page ?? workbench.ui.projectLibraryPage ?? 1);
+    workbench.ui.projectLibraryPage = Math.max(1, nextPage);
+    render(workbench);
+    return;
+  }
+
+  if (action === "toggle-project-card-menu") {
+    const projectId = target.dataset.projectId ?? null;
+    workbench.ui.projectCardMenuId =
+      workbench.ui.projectCardMenuId === projectId ? null : projectId;
+    render(workbench);
+    return;
+  }
+
+  if (action === "pick-project-cover") {
+    const projectId = target.dataset.projectId ?? null;
+    workbench.root
+      .querySelector(`input[data-action="upload-project-cover"][data-project-id="${projectId}"]`)
+      ?.click();
+    return;
+  }
+
+  if (action === "rename-project-card") {
+    const projectId = target.dataset.projectId ?? null;
+    const currentProject = workbench.ui.projectLibrary.find((project) => project.id === projectId);
+    workbench.ui.renameProjectId = projectId;
+    workbench.ui.renameProjectName = currentProject?.name ?? "";
+    workbench.ui.renameProjectNotice = "";
+    workbench.ui.projectCardMenuId = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "close-rename-project-modal") {
+    workbench.ui.renameProjectId = null;
+    workbench.ui.renameProjectName = "";
+    workbench.ui.renameProjectNotice = "";
+    render(workbench);
+    return;
+  }
+
+  if (action === "confirm-rename-project-card") {
+    const projectId = workbench.ui.renameProjectId;
+    const nextName = workbench.ui.renameProjectName.trim();
+    if (!nextName) {
+      workbench.ui.renameProjectNotice = "请输入项目名称";
+      render(workbench);
+      return;
+    }
+    await runAction(workbench, "正在重命名项目...", async () => {
+      await workbench.api.updateProject({
+        projectId,
+        name: nextName,
+      });
+      workbench.ui.renameProjectId = null;
+      workbench.ui.renameProjectName = "";
+      workbench.ui.renameProjectNotice = "";
+    });
+    return;
+  }
+
+  if (action === "delete-project-card") {
+    workbench.ui.deleteProjectId = target.dataset.projectId ?? null;
+    workbench.ui.projectCardMenuId = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "close-delete-project-modal") {
+    workbench.ui.deleteProjectId = null;
+    render(workbench);
+    return;
+  }
+
+  if (action === "confirm-delete-project-card") {
+    const projectId = workbench.ui.deleteProjectId;
+    await runAction(workbench, "正在删除项目...", async () => {
+      await workbench.api.deleteProject({ projectId });
+      workbench.ui.deleteProjectId = null;
+      if (workbench.ui.selectedProjectCardId === projectId) {
+        workbench.ui.selectedProjectCardId = null;
+        workbench.ui.projectPanelMode = "library";
+      }
+    });
+    return;
+  }
+
   if (action === "add-storyboard") {
     workbench.ui.storyboards = addStoryboard(workbench.ui.storyboards);
     workbench.ui.selectedStoryboardId = workbench.ui.storyboards.at(-1)?.id ?? null;
-    workbench.ui.toast = "已添加分镜 3。";
+    workbench.ui.toast = "已新增分镜 3。";
     render(workbench);
+    return;
+  }
+
+  if (action === "skip-calibration" || action === "override-calibration") {
+    const isSkip = action === "skip-calibration";
+    const reason = (isSkip
+      ? workbench.ui.calibrationSkipReason
+      : workbench.ui.calibrationOverrideReason
+    ).trim();
+    if (!reason) {
+      workbench.ui.validationMessage = isSkip
+        ? "请先填写跳过校准原因"
+        : "请先填写覆盖校准原因";
+      workbench.ui.toast = workbench.ui.validationMessage;
+      render(workbench);
+      return;
+    }
+    await runAction(
+      workbench,
+      isSkip ? "正在跳过校准..." : "正在覆盖校准...",
+      async () => {
+        workbench.ui.validationMessage = "";
+        if (isSkip) {
+          await workbench.api.skipCalibration({ reason });
+        } else {
+          await workbench.api.overrideCalibration({ reason });
+        }
+      },
+    );
     return;
   }
 
   await runAction(workbench, statusForAction(action), async () => {
     if (action === "create-project") {
-      const name = getInputValue(workbench.root, "#project-create-name-input", "").slice(0, 50);
+      const name = getInputValue(workbench.root, "#project-create-name-input", "").trim();
       if (!name) {
         workbench.ui.createProjectNotice = "请先填写项目名称";
         render(workbench);
         return;
       }
-      const aspectRatio = getCheckedValue(workbench.root, 'input[name="project-aspect-ratio"]', "9:16");
-      const projectType = getCheckedValue(workbench.root, 'input[name="project-type"]', "anime");
+
+      const aspectRatio = getCheckedValue(workbench.root, "input[name=\"project-aspect-ratio\"]", "9:16");
+      const projectType = getCheckedValue(workbench.root, "input[name=\"project-type\"]", "anime");
       if (!aspectRatio) {
         workbench.ui.createProjectNotice = "请选择画面比例";
         render(workbench);
@@ -245,6 +550,7 @@ async function handleAction(workbench, target) {
         render(workbench);
         return;
       }
+
       const scriptInput = buildProjectSeedScript({ name, projectType });
       await workbench.api.createProject({
         name,
@@ -252,15 +558,7 @@ async function handleAction(workbench, target) {
         aspectRatio,
         resolution: "1080p",
       });
-      const projectCard = createProjectCard({
-        name,
-        aspectRatio,
-        projectType,
-        backendProjectId: workbench.state?.project?.id,
-      });
-      workbench.ui.projectLibrary = [...workbench.ui.projectLibrary, projectCard];
       workbench.ui.projectLibraryPage = 1;
-      workbench.ui.selectedProjectCardId = projectCard.id;
       workbench.ui.activeNavTab = "project";
       workbench.ui.projectPanelMode = "library";
       workbench.ui.isCreateModalOpen = false;
@@ -305,15 +603,16 @@ async function handleAction(workbench, target) {
       return;
     }
 
-    if (action === "run-calibration") {
-      await workbench.api.runCalibration();
-      return;
-    }
+  if (action === "run-calibration") {
+    const result = await workbench.api.runCalibration();
+    workbench.ui.lastCalibrationResult = result;
+    return;
+  }
 
-    if (action === "generate-images") {
-      await workbench.api.generateImages();
-      return;
-    }
+  if (action === "generate-images") {
+    workbench.ui.imageGenerationResult = await workbench.api.generateImages();
+    return;
+  }
 
     if (action === "generate-videos") {
       const validation = validateVideoGeneration({
@@ -326,7 +625,7 @@ async function handleAction(workbench, target) {
         return;
       }
       workbench.ui.validationMessage = "";
-      await workbench.api.generateVideos();
+      workbench.ui.videoGenerationResult = await workbench.api.generateVideos();
       return;
     }
 
@@ -346,7 +645,7 @@ async function handleAction(workbench, target) {
     }
 
     if (action === "preview-export") {
-      await workbench.api.previewExport();
+      workbench.ui.exportPreviewResult = await workbench.api.previewExport();
     }
   });
 }
@@ -362,17 +661,17 @@ async function runSmartGenerate(workbench) {
     throw new Error("asset_review_not_ready");
   }
   if (!workbench.state.calibration) {
-    await workbench.api.runCalibration();
+    workbench.ui.lastCalibrationResult = await workbench.api.runCalibration();
   }
   if (workbench.state.shots.some((shot) => !shot.currentImageAssetVersionId)) {
-    await workbench.api.generateImages();
+    workbench.ui.imageGenerationResult = await workbench.api.generateImages();
   }
   const afterImages = await workbench.api.getCreatorState();
   if (afterImages.shots.some((shot) => !shot.currentImageAssetVersionId)) {
     throw new Error("image_assets_missing");
   }
   if (afterImages.shots.some((shot) => !shot.currentVideoAssetVersionId)) {
-    await workbench.api.generateVideos();
+    workbench.ui.videoGenerationResult = await workbench.api.generateVideos();
   }
 }
 
@@ -461,7 +760,10 @@ function getCheckedValue(root, selector, fallback) {
 
 function deriveInitialNavTab(hash) {
   const token = String(hash || "").replace(/^#/, "");
-  if (!token || token === "home") {
+  if (!token) {
+    return "project";
+  }
+  if (token === "home") {
     return "home";
   }
   if (token === "asset-prep-section" || token === "storyboard-workbench" || token === "project") {
@@ -508,8 +810,8 @@ function buildProjectSeedScript({ name, projectType }) {
     {
       "domestic-live": "国内仿真人剧",
       "overseas-live": "海外仿真人剧",
-      anime: "2D/3D动漫",
-    }[projectType] ?? "2D/3D动漫";
+      anime: "2D/3D 动漫",
+    }[projectType] ?? "2D/3D 动漫";
 
   return `${name}
 
@@ -517,42 +819,74 @@ function buildProjectSeedScript({ name, projectType }) {
 第一集：请根据项目名称和剧目类型生成一版可继续拆分镜的初始故事草稿。`;
 }
 
-function seedProjectLibrary(workbench) {
-  if (!workbench.state?.project) {
+async function syncProjectLibraryFromApi(workbench) {
+  const payload = await workbench.api.getProjects();
+  const projects = Array.isArray(payload.projects)
+    ? payload.projects.map((project) => mapProjectRecordToCard(project))
+    : [];
+  workbench.ui.projectLibrary = projects;
+  syncSelectedProjectCard(workbench, projects);
+}
+
+function syncSelectedProjectCard(workbench, projects) {
+  const selectedProjectId = workbench.ui.selectedProjectCardId;
+  if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) {
     return;
   }
 
-  const currentName = workbench.state.project.name ?? "";
-  const exists = workbench.ui.projectLibrary.some(
-    (project) => project.backendProjectId === workbench.state.project.id || project.name === currentName,
-  );
-
-  if (!exists) {
-    workbench.ui.projectLibrary = [
-      ...workbench.ui.projectLibrary,
-      createProjectCard({
-        name: currentName,
-        aspectRatio: workbench.state.project.aspectRatio ?? "9:16",
-        projectType: "anime",
-        backendProjectId: workbench.state.project.id,
-      }),
-    ];
+  const activeProjectId = workbench.state?.project?.id ?? null;
+  if (activeProjectId && projects.some((project) => project.id === activeProjectId)) {
+    workbench.ui.selectedProjectCardId = activeProjectId;
+    return;
   }
 
-  if (!workbench.ui.selectedProjectCardId) {
-    workbench.ui.selectedProjectCardId = workbench.ui.projectLibrary.at(-1)?.id ?? null;
-  }
+  workbench.ui.selectedProjectCardId = projects[0]?.id ?? null;
 }
 
-function createProjectCard({ name, aspectRatio, projectType, backendProjectId }) {
+function mapProjectRecordToCard(project) {
+  const createdAtValue = project.createdAt ? new Date(project.createdAt) : new Date();
+  const createdAtTimestamp = Number.isFinite(createdAtValue.getTime())
+    ? createdAtValue.getTime()
+    : Date.now();
+
   return {
-    id: `project-card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    backendProjectId: backendProjectId ?? null,
-    name,
-    aspectRatio,
-    projectType,
-    createdAt: formatProjectDate(new Date()),
+    id: project.id,
+    name: project.name ?? "未命名项目",
+    aspectRatio: project.aspectRatio ?? "9:16",
+    projectType: inferProjectType(project),
+    status: phaseToProjectStatus(project.phase),
+    coverImageUrl: project.coverImageUrl ?? "",
+    createdAtTimestamp,
+    createdAt: formatProjectDate(createdAtValue),
   };
+}
+
+function phaseToProjectStatus(phase) {
+  if (phase === "export") {
+    return "一稿交付";
+  }
+  if (phase === "shot_generation" || phase === "asset_review") {
+    return "制作中";
+  }
+  return "未开始";
+}
+
+function projectStatusToPhase(status) {
+  if (status === "一稿交付" || status === "完结") {
+    return "export";
+  }
+  if (status === "制作中") {
+    return "shot_generation";
+  }
+  return "script_input";
+}
+
+function inferProjectType(project) {
+  const name = String(project.name ?? "").toLocaleLowerCase();
+  if (name.includes("live") || name.includes("真人")) {
+    return "domestic-live";
+  }
+  return "anime";
 }
 
 function formatProjectDate(date) {
@@ -560,4 +894,13 @@ function formatProjectDate(date) {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}/${month}/${day}`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("cover_read_failed"));
+    reader.readAsDataURL(file);
+  });
 }

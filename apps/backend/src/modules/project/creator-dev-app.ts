@@ -207,6 +207,70 @@ export class CreatorDevApp {
     };
   }
 
+  async createShot(input: { title?: string | null }) {
+    const bundle = this.requireBundle();
+    const created = await createShotDraft(this.shotStore, {
+      organizationId: bundle.project.organizationId,
+      projectId: bundle.project.id,
+      title: input.title?.trim() || `Shot ${String(this.shotIds.length + 1).padStart(3, "0")}`,
+      createdByUserId: bundle.project.createdByUserId,
+    });
+    const sorted = await this.shotStore.saveShot({
+      ...created,
+      sortOrder: this.shotIds.length,
+    });
+    this.shotIds.push(sorted.id);
+    this.exportPreview = null;
+    return { shot: sorted, shots: await this.listShotRecords() };
+  }
+
+  async updateShot(input: { shotId: string; title?: string | null }) {
+    const shot = await this.shotStore.findShot(input.shotId);
+    if (!shot || !this.shotIds.includes(input.shotId)) {
+      throw new Error("creator_shot_missing");
+    }
+    const updated = await this.shotStore.saveShot({
+      ...shot,
+      title: input.title?.trim() || shot.title,
+      contentRevision: shot.contentRevision + 1,
+      contentStatus: "ready",
+      imageStatus: shot.currentImageAssetVersionId ? "stale" : shot.imageStatus,
+      videoStatus: shot.currentVideoAssetVersionId ? "stale" : shot.videoStatus,
+      activeImageTaskId: null,
+      activeImageRevision: null,
+      activeVideoTaskId: null,
+      activeVideoImageAssetVersionId: null,
+    });
+    this.exportPreview = null;
+    return { shot: updated, shots: await this.listShotRecords() };
+  }
+
+  async deleteShot(input: { shotId: string }) {
+    if (!this.shotIds.includes(input.shotId)) {
+      throw new Error("creator_shot_missing");
+    }
+    await this.shotStore.deleteShot(input.shotId);
+    this.shotIds = this.shotIds.filter((shotId) => shotId !== input.shotId);
+    await this.rewriteShotSortOrder();
+    this.exportPreview = null;
+    return { shots: await this.listShotRecords() };
+  }
+
+  async reorderShots(input: { shotIds: string[] }) {
+    const known = new Set(this.shotIds);
+    if (input.shotIds.some((shotId) => !known.has(shotId))) {
+      throw new Error("creator_shot_missing");
+    }
+    const provided = new Set(input.shotIds);
+    this.shotIds = [
+      ...input.shotIds,
+      ...this.shotIds.filter((shotId) => !provided.has(shotId)),
+    ];
+    await this.rewriteShotSortOrder();
+    this.exportPreview = null;
+    return { shots: await this.listShotRecords() };
+  }
+
   async runCalibration() {
     let calibration = await this.createReviewedCalibrationSession();
     calibration = passCalibrationSession(calibration, {
@@ -414,6 +478,18 @@ export class CreatorDevApp {
       shots.push(shot);
     }
     return shots;
+  }
+
+  private async rewriteShotSortOrder() {
+    for (const [index, shotId] of this.shotIds.entries()) {
+      const shot = await this.shotStore.findShot(shotId);
+      if (shot) {
+        await this.shotStore.saveShot({
+          ...shot,
+          sortOrder: index,
+        });
+      }
+    }
   }
 
   private requireBundle() {

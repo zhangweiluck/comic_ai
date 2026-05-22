@@ -28,6 +28,7 @@ export interface AssetVersionRecord {
     mimeType: string;
     width: number;
     height: number;
+    [key: string]: unknown;
   };
   sourceTaskId: string;
   sourceAttemptId: string;
@@ -112,6 +113,7 @@ export async function createAssetVersion(
       mimeType: string;
       width: number;
       height: number;
+      [key: string]: unknown;
     };
     sourceTaskId: string;
     sourceAttemptId: string;

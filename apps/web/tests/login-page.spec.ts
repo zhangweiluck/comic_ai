@@ -54,8 +54,11 @@ describe("login page client flow", () => {
     assert.match(js, /\/api\/creator\/parse/);
     assert.match(js, /\/api\/creator\/assets\/confirm-all/);
     assert.match(js, /\/api\/creator\/calibration\/run/);
+    assert.match(js, /\/api\/creator\/calibration\/skip/);
+    assert.match(js, /\/api\/creator\/calibration\/override/);
     assert.match(js, /\/api\/creator\/images\/generate/);
     assert.match(js, /\/api\/creator\/videos\/generate/);
     assert.match(js, /\/api\/creator\/export\/preview/);
+    assert.match(js, /\/api\/creator\/export\/history/);
   });
 });

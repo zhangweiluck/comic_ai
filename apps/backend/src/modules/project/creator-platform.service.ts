@@ -56,6 +56,7 @@ export async function requestCreatorImageGenerationPlatformBatch(
     projectId: string;
     shots: CreatorShotPlatformInput[];
     now: Date;
+    options?: Record<string, unknown>;
   },
   options: {
     runtime?: CreatorPlatformRuntime;
@@ -87,6 +88,7 @@ export async function requestCreatorImageGenerationPlatformBatch(
     inputSnapshot: {
       shotIds: input.shots.map((shot) => shot.id),
       requestedAt: input.now.toISOString(),
+      options: input.options ?? {},
     },
     createdByUserId: actor.actorId,
     tasks: input.shots.map((shot) => ({
@@ -136,6 +138,7 @@ export async function requestCreatorImageGenerationPlatformBatch(
         shotId: shot.id,
         title: shot.title,
         contentRevision: shot.contentRevision,
+        options: input.options ?? {},
       },
       createdByUserId: actor.actorId,
       now: input.now,
@@ -192,6 +195,7 @@ export async function requestCreatorVideoGenerationPlatformBatch(
     projectId: string;
     shots: CreatorShotPlatformInput[];
     now: Date;
+    options?: Record<string, unknown>;
   },
   options: {
     runtime?: CreatorPlatformRuntime;
@@ -224,6 +228,7 @@ export async function requestCreatorVideoGenerationPlatformBatch(
     inputSnapshot: {
       shotIds: readyShots.map((shot) => shot.id),
       requestedAt: input.now.toISOString(),
+      options: input.options ?? {},
     },
     createdByUserId: actor.actorId,
     tasks: readyShots.map((shot) => ({
@@ -271,6 +276,7 @@ export async function requestCreatorVideoGenerationPlatformBatch(
       redactedPayload: {
         shotId: shot.id,
         imageAssetVersionId: shot.currentImageAssetVersionId,
+        options: input.options ?? {},
       },
       createdByUserId: actor.actorId,
       now: input.now,

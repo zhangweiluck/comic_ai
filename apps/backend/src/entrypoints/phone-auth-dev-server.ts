@@ -88,6 +88,12 @@ function writeJson(response: ServerResponse, payload: AuthHttpResponse<unknown>)
 }
 
 async function serveStatic(pathname: string, response: ServerResponse) {
+  if (pathname === "/favicon.ico") {
+    response.statusCode = 204;
+    response.end();
+    return;
+  }
+
   const normalizedPath =
     pathname === "/" ? "/login.html" : pathname === "/login" ? "/login.html" : pathname;
   const filePath = join(webRoot, normalizedPath.replace(/^\/+/, ""));
@@ -385,6 +391,19 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           );
         }
 
+        if (request.method === "GET" && pathname === "/api/creator/projects") {
+          return writeJson(
+            response,
+            await creatorApplication.listProjects({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
         if (request.method === "POST" && pathname === "/api/creator/project/create") {
           const body = (await readJsonBody(request)) as {
             name: string;
@@ -406,6 +425,61 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           );
         }
 
+        if (request.method === "PATCH" && pathname === "/api/creator/project") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+            name?: string | null;
+            phase?: "script_input" | "asset_review" | "shot_generation" | "export" | null;
+            coverImageUrl?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.updateProject({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "DELETE" && pathname === "/api/creator/project") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.deleteProject({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/project/cover") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+            coverImageUrl?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.updateProject({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
         if (request.method === "POST" && pathname === "/api/creator/parse") {
           return writeJson(
             response,
@@ -415,6 +489,78 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
                 sessionToken: authenticated.sessionToken,
               },
               idempotencyKey: `dev-parse-${authenticated.user.id}-${Date.now()}`,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "GET" && pathname === "/api/creator/assets/library") {
+          return writeJson(
+            response,
+            await creatorApplication.listAssetLibrary({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/assets/import") {
+          const body = (await readJsonBody(request)) as {
+            kind: "character" | "scene" | "prop" | "image" | "video";
+            name?: string | null;
+            storageObjectKey?: string | null;
+            mimeType?: string | null;
+            width?: number | null;
+            height?: number | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.importAsset({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/assets/generate") {
+          const body = (await readJsonBody(request)) as {
+            kind: "character" | "scene" | "prop" | "image" | "video";
+            name?: string | null;
+            prompt?: string | null;
+            model?: string | null;
+            width?: number | null;
+            height?: number | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.generateAsset({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "GET" && pathname.startsWith("/api/creator/assets/versions/")) {
+          const assetId = pathname.split("/").at(-1) ?? "";
+          return writeJson(
+            response,
+            await creatorApplication.listAssetVersions({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              assetId,
               now: new Date(),
             }),
           );
@@ -514,7 +660,82 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           );
         }
 
+        if (request.method === "POST" && pathname === "/api/creator/shots") {
+          const body = (await readJsonBody(request)) as {
+            title?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.createShot({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "PATCH" && pathname === "/api/creator/shots") {
+          const body = (await readJsonBody(request)) as {
+            shotId: string;
+            title?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.updateShot({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "DELETE" && pathname === "/api/creator/shots") {
+          const body = (await readJsonBody(request)) as {
+            shotId: string;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.deleteShot({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/shots/reorder") {
+          const body = (await readJsonBody(request)) as {
+            shotIds: string[];
+          };
+          return writeJson(
+            response,
+            await creatorApplication.reorderShots({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
         if (request.method === "POST" && pathname === "/api/creator/images/generate") {
+          const body = (await readJsonBody(request)) as {
+            shotId?: string | null;
+            promptOverride?: string | null;
+            model?: string | null;
+            parameters?: Record<string, unknown> | null;
+          };
           return writeJson(
             response,
             await creatorApplication.generateImages({
@@ -522,12 +743,22 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
                 id: authenticated.user.id,
                 sessionToken: authenticated.sessionToken,
               },
+              body,
               now: new Date(),
             }),
           );
         }
 
         if (request.method === "POST" && pathname === "/api/creator/videos/generate") {
+          const body = (await readJsonBody(request)) as {
+            shotId?: string | null;
+            motionPrompt?: string | null;
+            model?: string | null;
+            parameters?: Record<string, unknown> | null;
+            audioEnabled?: boolean | null;
+            musicEnabled?: boolean | null;
+            lipSyncEnabled?: boolean | null;
+          };
           return writeJson(
             response,
             await creatorApplication.generateVideos({
@@ -535,6 +766,7 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
                 id: authenticated.user.id,
                 sessionToken: authenticated.sessionToken,
               },
+              body,
               now: new Date(),
             }),
           );

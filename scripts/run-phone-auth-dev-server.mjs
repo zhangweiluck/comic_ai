@@ -16,8 +16,7 @@ loadDotEnvFile(envFilePath);
 const result = spawnSync(
   runtime,
   [
-    "--loader",
-    "tsx",
+    ...resolveTsxRuntimeArgs(runtime),
     "--input-type=module",
     "--eval",
     `import(${JSON.stringify(pathToFileUrl(serverEntrypoint))}).then(async ({ createPhoneAuthDevServer }) => {
@@ -85,6 +84,29 @@ function findNodeRuntime(minMajor) {
     seen.add(candidate);
     candidates.push(candidate);
   }
+}
+
+function resolveTsxRuntimeArgs(runtime) {
+  const version = spawnSync(runtime, ["--version"], {
+    encoding: "utf8",
+  });
+
+  if (version.status !== 0) {
+    return ["--loader", "tsx"];
+  }
+
+  const match = version.stdout.trim().match(/^v(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return ["--loader", "tsx"];
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  if (major > 18 || (major === 18 && minor >= 19)) {
+    return ["--import", "tsx"];
+  }
+
+  return ["--loader", "tsx"];
 }
 
 function loadDotEnvFile(envFilePath) {

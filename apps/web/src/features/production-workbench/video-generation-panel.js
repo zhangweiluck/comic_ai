@@ -31,6 +31,8 @@ export function renderVideoGenerationPanel({
   canGenerateImages = false,
   canGenerateVideos = false,
   validationMessage = "",
+  calibrationSkipReason = "",
+  calibrationOverrideReason = "",
 } = {}) {
   const selectedModel =
     videoModels.find((model) => model.id === selectedModelId) ?? videoModels[1];
@@ -71,6 +73,28 @@ export function renderVideoGenerationPanel({
         <button id="run-calibration-button" class="secondary-action" type="button" data-action="run-calibration" ${disabled(!canCalibrate || busy)}>校准</button>
         <button id="generate-images-button" class="secondary-action" type="button" data-action="generate-images" ${disabled(!canGenerateImages || busy)}>生成图片</button>
         <button id="generate-videos-button" class="secondary-action" type="button" data-action="generate-videos" ${disabled(!canGenerateVideos || busy)}>生成视频</button>
+      </div>
+      <div class="calibration-panel">
+        <label class="control-field">
+          <span>跳过校准原因</span>
+          <textarea
+            id="calibration-skip-reason-input"
+            placeholder="说明为什么这次可以跳过校准"
+          >${escapeHtml(calibrationSkipReason)}</textarea>
+        </label>
+        <div class="calibration-actions">
+          <button class="secondary-action compact" type="button" data-action="skip-calibration" ${disabled(!canCalibrate || busy)}>跳过校准</button>
+        </div>
+        <label class="control-field">
+          <span>覆盖校准原因</span>
+          <textarea
+            id="calibration-override-reason-input"
+            placeholder="说明为什么需要覆盖校准结果"
+          >${escapeHtml(calibrationOverrideReason)}</textarea>
+        </label>
+        <div class="calibration-actions">
+          <button class="secondary-action compact" type="button" data-action="override-calibration" ${disabled(!canCalibrate || busy)}>覆盖校准</button>
+        </div>
       </div>
       <p class="validation-copy">${escapeHtml(validationMessage)}</p>
       <button class="generate-now" type="button" data-action="smart-generate" ${disabled(busy)}>

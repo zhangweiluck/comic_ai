@@ -12,6 +12,10 @@ export function renderEpisodeWorkbench({
   canGenerateImages = false,
   canGenerateVideos = false,
   validationMessage = "",
+  calibrationSkipReason = "",
+  calibrationOverrideReason = "",
+  imageGenerationResult = null,
+  videoGenerationResult = null,
 } = {}) {
   return `
     <section id="storyboard-workbench" class="storyboard-workbench" aria-label="分镜工作台">
@@ -46,8 +50,70 @@ export function renderEpisodeWorkbench({
         canGenerateImages,
         canGenerateVideos,
         validationMessage,
+        calibrationSkipReason,
+        calibrationOverrideReason,
+        imageGenerationResult,
+        videoGenerationResult,
       })}
+      ${renderGenerationDiagnostics({ imageGenerationResult, videoGenerationResult })}
     </section>
+  `;
+}
+
+function renderGenerationDiagnostics({ imageGenerationResult, videoGenerationResult }) {
+  const panels = [
+    renderGenerationPanel("图片工作流", imageGenerationResult),
+    renderGenerationPanel("视频工作流", videoGenerationResult),
+  ].filter(Boolean);
+
+  if (!panels.length) {
+    return "";
+  }
+
+  return `
+    <section class="generation-diagnostics" aria-label="Generation diagnostics">
+      <header class="generation-diagnostics-head">
+        <strong>工作流详情</strong>
+        <span>任务、供应商和存储追踪</span>
+      </header>
+      <div class="generation-diagnostics-grid">
+        ${panels.join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderGenerationPanel(label, result) {
+  const platform = result?.platform;
+  if (!platform) {
+    return "";
+  }
+
+  const tasks = Array.isArray(platform.tasks) ? platform.tasks : [];
+  return `
+    <article class="generation-diagnostics-card">
+      <header>
+        <strong>${escapeHtml(label)}</strong>
+        <span>workflow ${escapeHtml(platform.workflowId ?? "")}</span>
+      </header>
+      <div class="generation-diagnostics-meta">
+        <span>状态：${escapeHtml(platform.workflowStatus ?? "unknown")}</span>
+        <span>任务数：${tasks.length}</span>
+      </div>
+      <ul class="generation-diagnostics-list">
+        ${tasks
+          .map(
+            (task) => `
+              <li>
+                <strong>${escapeHtml(task.shotId)}</strong>
+                <span>${escapeHtml(task.taskId)}</span>
+                <small>${escapeHtml(task.providerRequestId)} · ${escapeHtml(task.storageObjectKey)}</small>
+              </li>
+            `,
+          )
+          .join("")}
+      </ul>
+    </article>
   `;
 }
 

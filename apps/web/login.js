@@ -238,6 +238,7 @@ const statusMessage = document.querySelector("#status-message");
 const debugPanel = document.querySelector("#debug-panel");
 
 let activeChallengeId = null;
+const appUrl = new URL("./app.html#project", window.location.href).toString();
 
 async function loadSession() {
   const response = await fetch("/api/auth/session", {
@@ -249,7 +250,7 @@ async function loadSession() {
   }
 
   await response.json();
-  window.location.href = "/app.html";
+  window.location.href = appUrl;
 }
 
 function setStatus(message) {
@@ -325,22 +326,16 @@ form?.addEventListener("submit", async (event) => {
 
   setStatus(`登录成功：${verifyPayload.user.phone}`);
 
-  // Dissolve transition effect
   const overlay = document.createElement("div");
   overlay.className = "dissolve-overlay";
   document.body.appendChild(overlay);
 
-  // Speed up fluid
-  const originalTimeScale = time;
-
-  // Trigger overlay
   requestAnimationFrame(() => {
     overlay.classList.add("active");
   });
 
-  // Redirect after transition
   setTimeout(() => {
-    window.location.href = "/app.html";
+    window.location.href = appUrl;
   }, 800);
 });
 

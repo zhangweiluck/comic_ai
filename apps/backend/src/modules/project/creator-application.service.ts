@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { appendAuditEvent, type AuditEventRecord } from "../audit/audit.service.ts";
 import { resolveActorContext } from "../organization/actor-context.service.ts";
 import type { SqlDatabase } from "../shared/db/sql.ts";
@@ -7,6 +9,7 @@ import {
   finalizeTaskAttempt,
 } from "../workflow-task/workflow-task.service.ts";
 import { upsertAssetVersionSnapshot } from "./asset-version-record.service.ts";
+import type { AssetType } from "./asset.service.ts";
 import { computeAssetReviewSummary } from "./asset-review.service.ts";
 import {
   assetReviewStateFromRecords,
@@ -114,6 +117,89 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
     return sqlState;
   }
 
+  async function writeLibraryAsset(input: {
+    user: AuthenticatedCreatorUser;
+    body: {
+      kind: "character" | "scene" | "prop" | "image" | "video";
+      name?: string | null;
+      storageObjectKey?: string | null;
+      mimeType?: string | null;
+      width?: number | null;
+      height?: number | null;
+      prompt?: string | null;
+      model?: string | null;
+    };
+    now: Date;
+    source: "import" | "generated";
+  }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+    const { creatorApp, sqlState } = getCreatorState(input.user.id);
+    await ensureSqlState(input.user.id, sqlState);
+    const state = await creatorApp.getState();
+    const projectId = sqlState.projectId ?? state.project?.id ?? null;
+    if (!projectId) {
+      return { status: 409, body: { error: "creator_project_missing" } };
+    }
+    const name = input.body.name?.trim();
+    if (!name) {
+      return {
+        status: 400,
+        body: { error: "invalid_asset_input", fieldErrors: { name: "name_required" } },
+      };
+    }
+    const actor = await resolveActorContext(deps.db, {
+      sessionToken: input.user.sessionToken,
+      projectId,
+      now: input.now,
+    });
+    const assetType = assetTypeForKind(input.body.kind);
+    const assetKey = `${input.body.kind}-${name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, "-")}-${randomUUID().slice(0, 8)}`;
+    const asset = {
+      id: randomUUID(),
+      organizationId: actor.organizationId,
+      projectId,
+      assetType,
+      assetKey,
+      createdByUserId: actor.actorId,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    const version = {
+      id: randomUUID(),
+      organizationId: actor.organizationId,
+      assetId: asset.id,
+      versionNumber: 1,
+      storageObjectKey:
+        input.body.storageObjectKey?.trim() ||
+        `library/${projectId}/${assetType}/${assetKey}`,
+      metadata: {
+        mimeType: input.body.mimeType?.trim() || (input.body.kind === "video" ? "video/mp4" : "image/png"),
+        width: input.body.width ?? 1024,
+        height: input.body.height ?? 1024,
+        source: input.source,
+        prompt: input.body.prompt ?? null,
+        model: input.body.model ?? null,
+        label: name,
+      },
+      sourceTaskId: randomUUID(),
+      sourceAttemptId: randomUUID(),
+      createdByUserId: actor.actorId,
+      createdAt: input.now,
+    };
+    await upsertAssetVersionSnapshot(deps.db, {
+      asset,
+      version,
+      now: input.now,
+    });
+
+    return {
+      status: 200,
+      body: {
+        asset,
+        version,
+      },
+    };
+  }
+
   return {
     async getState(input: {
       user: AuthenticatedCreatorUser;
@@ -183,6 +269,92 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
           state: await creatorApp.getState(),
         },
       };
+    },
+
+    async listProjects(input: {
+      user: AuthenticatedCreatorUser;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        workspaceId: deps.workspaceId,
+        now: input.now,
+      });
+      const projects = await listProjectsForWorkspace(deps.db, {
+        organizationId: actor.organizationId,
+        workspaceId: deps.workspaceId,
+      });
+      return {
+        status: 200,
+        body: { projects },
+      };
+    },
+
+    async updateProject(input: {
+      user: AuthenticatedCreatorUser;
+      body: {
+        projectId?: string | null;
+        name?: string | null;
+        phase?: "script_input" | "asset_review" | "shot_generation" | "export" | null;
+        coverImageUrl?: string | null;
+      };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = input.body.projectId ?? sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const updated = await updateProjectRecord(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        name: input.body.name,
+        phase: input.body.phase,
+        coverImageUrl: input.body.coverImageUrl,
+        now: input.now,
+      });
+      if (!updated) {
+        return { status: 404, body: { error: "project_not_found" } };
+      }
+      return {
+        status: 200,
+        body: { project: updated },
+      };
+    },
+
+    async deleteProject(input: {
+      user: AuthenticatedCreatorUser;
+      body: { projectId?: string | null };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = input.body.projectId ?? sqlState.projectId;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      await deleteProjectRecord(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+      });
+      if (sqlState.projectId === projectId) {
+        sqlState.projectId = null;
+        sqlState.scriptId = null;
+      }
+      return { status: 200, body: { deleted: true, projectId } };
     },
 
     async parseScript(input: {
@@ -408,6 +580,208 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
       };
     },
 
+    async listAssetLibrary(input: {
+      user: AuthenticatedCreatorUser;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      return {
+        status: 200,
+        body: {
+          assets: await listAssetsForProject(deps.db, {
+            organizationId: actor.organizationId,
+            projectId,
+          }),
+        },
+      };
+    },
+
+    async importAsset(input: {
+      user: AuthenticatedCreatorUser;
+      body: {
+        kind: "character" | "scene" | "prop" | "image" | "video";
+        name?: string | null;
+        storageObjectKey?: string | null;
+        mimeType?: string | null;
+        width?: number | null;
+        height?: number | null;
+      };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      return writeLibraryAsset({
+        user: input.user,
+        body: input.body,
+        now: input.now,
+        source: "import",
+      });
+    },
+
+    async generateAsset(input: {
+      user: AuthenticatedCreatorUser;
+      body: {
+        kind: "character" | "scene" | "prop" | "image" | "video";
+        name?: string | null;
+        prompt?: string | null;
+        model?: string | null;
+        width?: number | null;
+        height?: number | null;
+      };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      return writeLibraryAsset({
+        user: input.user,
+        body: {
+          ...input.body,
+          storageObjectKey: `library/${input.body.kind}/${randomUUID()}`,
+          mimeType: input.body.kind === "video" ? "video/mp4" : "image/png",
+        },
+        now: input.now,
+        source: "generated",
+      });
+    },
+
+    async listAssetVersions(input: {
+      user: AuthenticatedCreatorUser;
+      assetId: string;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        workspaceId: deps.workspaceId,
+        now: input.now,
+      });
+      const versions = await listAssetVersions(deps.db, {
+        organizationId: actor.organizationId,
+        assetId: input.assetId,
+      });
+      return { status: 200, body: { versions } };
+    },
+
+    async createShot(input: {
+      user: AuthenticatedCreatorUser;
+      body: { title?: string | null };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const result = await creatorApp.createShot(input.body);
+      await upsertShotsForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        createdByUserId: actor.actorId,
+        shots: [result.shot as ShotRecord],
+        now: input.now,
+      });
+      return { status: 200, body: result };
+    },
+
+    async updateShot(input: {
+      user: AuthenticatedCreatorUser;
+      body: { shotId: string; title?: string | null };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const result = await creatorApp.updateShot(input.body);
+      await upsertShotsForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        createdByUserId: actor.actorId,
+        shots: [result.shot as ShotRecord],
+        now: input.now,
+      });
+      return { status: 200, body: result };
+    },
+
+    async deleteShot(input: {
+      user: AuthenticatedCreatorUser;
+      body: { shotId: string };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const result = await creatorApp.deleteShot(input.body);
+      await deps.db.query(
+        `
+          DELETE FROM shots
+          WHERE organization_id = $1
+            AND project_id = $2
+            AND id = $3
+        `,
+        [actor.organizationId, projectId, input.body.shotId],
+      );
+      return { status: 200, body: result };
+    },
+
+    async reorderShots(input: {
+      user: AuthenticatedCreatorUser;
+      body: { shotIds: string[] };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const state = await creatorApp.getState();
+      const projectId = sqlState.projectId ?? state.project?.id ?? null;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const result = await creatorApp.reorderShots(input.body);
+      await upsertShotsForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        createdByUserId: actor.actorId,
+        shots: result.shots as ShotRecord[],
+        now: input.now,
+      });
+      return { status: 200, body: result };
+    },
+
     async runCalibration(input: {
       user: AuthenticatedCreatorUser;
       now: Date;
@@ -566,6 +940,12 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
 
     async generateImages(input: {
       user: AuthenticatedCreatorUser;
+      body?: {
+        shotId?: string | null;
+        promptOverride?: string | null;
+        model?: string | null;
+        parameters?: Record<string, unknown> | null;
+      };
       now: Date;
     }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
       const { creatorApp, sqlState } = getCreatorState(input.user.id);
@@ -578,11 +958,18 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         };
       }
 
+      const requestedShots = filterRequestedShots(before.shots, input.body?.shotId);
       const platform = await requestCreatorImageGenerationPlatformBatch(deps.db, {
         sessionToken: input.user.sessionToken,
         projectId,
         now: input.now,
-        shots: before.shots.map((shot) => ({
+        options: {
+          shotId: input.body?.shotId ?? null,
+          promptOverride: input.body?.promptOverride ?? null,
+          model: input.body?.model ?? null,
+          parameters: input.body?.parameters ?? null,
+        },
+        shots: requestedShots.map((shot) => ({
           id: shot.id,
           title: shot.title,
           contentRevision: shot.contentRevision,
@@ -654,12 +1041,22 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         body: {
           ...generated,
           platform,
+          request: input.body ?? {},
         },
       };
     },
 
     async generateVideos(input: {
       user: AuthenticatedCreatorUser;
+      body?: {
+        shotId?: string | null;
+        motionPrompt?: string | null;
+        model?: string | null;
+        parameters?: Record<string, unknown> | null;
+        audioEnabled?: boolean | null;
+        musicEnabled?: boolean | null;
+        lipSyncEnabled?: boolean | null;
+      };
       now: Date;
     }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
       const { creatorApp, sqlState } = getCreatorState(input.user.id);
@@ -672,11 +1069,21 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         };
       }
 
+      const requestedShots = filterRequestedShots(before.shots, input.body?.shotId);
       const platform = await requestCreatorVideoGenerationPlatformBatch(deps.db, {
         sessionToken: input.user.sessionToken,
         projectId,
         now: input.now,
-        shots: before.shots.map((shot) => ({
+        options: {
+          shotId: input.body?.shotId ?? null,
+          motionPrompt: input.body?.motionPrompt ?? null,
+          model: input.body?.model ?? null,
+          parameters: input.body?.parameters ?? null,
+          audioEnabled: input.body?.audioEnabled ?? null,
+          musicEnabled: input.body?.musicEnabled ?? null,
+          lipSyncEnabled: input.body?.lipSyncEnabled ?? null,
+        },
+        shots: requestedShots.map((shot) => ({
           id: shot.id,
           title: shot.title,
           contentRevision: shot.contentRevision,
@@ -750,6 +1157,7 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         body: {
           ...generated,
           platform,
+          request: input.body ?? {},
         },
       };
     },
@@ -893,6 +1301,339 @@ async function appendCalibrationAuditEvent(
     },
     occurredAt: input.now,
   });
+}
+
+async function listProjectsForWorkspace(
+  db: SqlDatabase,
+  input: { organizationId: string; workspaceId: string },
+) {
+  const result = await db.query<{
+    id: string;
+    name: string;
+    cover_image_url: string | null;
+    aspect_ratio: string;
+    resolution: string;
+    phase: string;
+    created_by_user_id: string | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+  }>(
+    `
+      SELECT
+        id,
+        name,
+        cover_image_url,
+        aspect_ratio,
+        resolution,
+        phase,
+        created_by_user_id,
+        created_at,
+        updated_at
+      FROM projects
+      WHERE organization_id = $1
+        AND workspace_id = $2
+      ORDER BY created_at DESC, id DESC
+    `,
+    [input.organizationId, input.workspaceId],
+  );
+
+  return result.rows.map((project) => ({
+    id: project.id,
+    name: project.name,
+    coverImageUrl: project.cover_image_url,
+    aspectRatio: project.aspect_ratio,
+    resolution: project.resolution,
+    phase: project.phase,
+    createdByUserId: project.created_by_user_id,
+    createdAt: new Date(project.created_at),
+    updatedAt: new Date(project.updated_at),
+  }));
+}
+
+async function updateProjectRecord(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    name?: string | null;
+    phase?: "script_input" | "asset_review" | "shot_generation" | "export" | null;
+    coverImageUrl?: string | null;
+    now: Date;
+  },
+) {
+  const current = (
+    await db.query<{
+      id: string;
+      name: string;
+      cover_image_url: string | null;
+      aspect_ratio: string;
+      resolution: string;
+      phase: "script_input" | "asset_review" | "shot_generation" | "export";
+      created_by_user_id: string | null;
+      created_at: Date | string;
+      updated_at: Date | string;
+    }>(
+      `
+        SELECT *
+        FROM projects
+        WHERE organization_id = $1
+          AND id = $2
+      `,
+      [input.organizationId, input.projectId],
+    )
+  ).rows[0];
+  if (!current) {
+    return null;
+  }
+
+  const name = input.name === undefined ? current.name : input.name?.trim();
+  if (!name) {
+    throw new Error("project_name_required");
+  }
+  const row = (
+    await db.query<typeof current>(
+      `
+        UPDATE projects
+        SET name = $3,
+            phase = $4,
+            cover_image_url = $5,
+            updated_at = $6
+        WHERE organization_id = $1
+          AND id = $2
+        RETURNING *
+      `,
+      [
+        input.organizationId,
+        input.projectId,
+        name,
+        input.phase ?? current.phase,
+        input.coverImageUrl === undefined ? current.cover_image_url : input.coverImageUrl,
+        input.now,
+      ],
+    )
+  ).rows[0]!;
+
+  return {
+    id: row.id,
+    name: row.name,
+    coverImageUrl: row.cover_image_url,
+    aspectRatio: row.aspect_ratio,
+    resolution: row.resolution,
+    phase: row.phase,
+    createdByUserId: row.created_by_user_id,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
+async function deleteProjectRecord(
+  db: SqlDatabase,
+  input: { organizationId: string; projectId: string },
+) {
+  await db.query("DELETE FROM provider_requests WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query(
+    `
+      DELETE FROM task_attempts
+      WHERE task_id IN (
+        SELECT id FROM tasks WHERE organization_id = $1 AND project_id = $2
+      )
+    `,
+    [input.organizationId, input.projectId],
+  );
+  await db.query("DELETE FROM tasks WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM workflows WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM export_records WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM storage_objects WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query(
+    `
+      DELETE FROM asset_versions
+      WHERE organization_id = $1
+        AND asset_id IN (
+          SELECT id FROM assets WHERE organization_id = $1 AND project_id = $2
+        )
+    `,
+    [input.organizationId, input.projectId],
+  );
+  await db.query("DELETE FROM assets WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query(
+    `
+      DELETE FROM calibration_items
+      WHERE organization_id = $1
+        AND calibration_session_id IN (
+          SELECT id FROM calibration_sessions WHERE organization_id = $1 AND project_id = $2
+        )
+    `,
+    [input.organizationId, input.projectId],
+  );
+  await db.query("DELETE FROM calibration_sessions WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM asset_review_candidates WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM shots WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM scripts WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM audit_events WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+  await db.query("DELETE FROM projects WHERE organization_id = $1 AND id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
+}
+
+async function listAssetsForProject(
+  db: SqlDatabase,
+  input: { organizationId: string; projectId: string },
+) {
+  const result = await db.query<{
+    id: string;
+    asset_type: string;
+    asset_key: string;
+    created_at: Date | string;
+    updated_at: Date | string;
+    version_id: string | null;
+    version_number: number | string | null;
+    storage_object_key: string | null;
+    metadata_json: Record<string, unknown> | null;
+    version_created_at: Date | string | null;
+  }>(
+    `
+      SELECT
+        a.id,
+        a.asset_type,
+        a.asset_key,
+        a.created_at,
+        a.updated_at,
+        v.id AS version_id,
+        v.version_number,
+        v.storage_object_key,
+        v.metadata_json,
+        v.created_at AS version_created_at
+      FROM assets a
+      LEFT JOIN LATERAL (
+        SELECT *
+        FROM asset_versions
+        WHERE organization_id = a.organization_id
+          AND asset_id = a.id
+        ORDER BY version_number DESC
+        LIMIT 1
+      ) v ON true
+      WHERE a.organization_id = $1
+        AND a.project_id = $2
+      ORDER BY a.updated_at DESC, a.id DESC
+    `,
+    [input.organizationId, input.projectId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    assetType: row.asset_type,
+    assetKey: row.asset_key,
+    label: row.metadata_json?.label ?? row.asset_key,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    latestVersion: row.version_id
+      ? {
+          id: row.version_id,
+          versionNumber: Number(row.version_number),
+          storageObjectKey: row.storage_object_key,
+          metadata: row.metadata_json,
+          createdAt: row.version_created_at ? new Date(row.version_created_at) : null,
+        }
+      : null,
+  }));
+}
+
+async function listAssetVersions(
+  db: SqlDatabase,
+  input: { organizationId: string; assetId: string },
+) {
+  const result = await db.query<{
+    id: string;
+    version_number: number | string;
+    storage_object_key: string;
+    metadata_json: Record<string, unknown>;
+    source_task_id: string | null;
+    source_attempt_id: string | null;
+    created_at: Date | string;
+  }>(
+    `
+      SELECT
+        id,
+        version_number,
+        storage_object_key,
+        metadata_json,
+        source_task_id,
+        source_attempt_id,
+        created_at
+      FROM asset_versions
+      WHERE organization_id = $1
+        AND asset_id = $2
+      ORDER BY version_number DESC
+    `,
+    [input.organizationId, input.assetId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    versionNumber: Number(row.version_number),
+    storageObjectKey: row.storage_object_key,
+    metadata: row.metadata_json,
+    sourceTaskId: row.source_task_id,
+    sourceAttemptId: row.source_attempt_id,
+    createdAt: new Date(row.created_at),
+  }));
+}
+
+function assetTypeForKind(kind: "character" | "scene" | "prop" | "image" | "video"): AssetType {
+  if (kind === "character") {
+    return "character_sheet";
+  }
+  if (kind === "scene") {
+    return "scene_reference";
+  }
+  if (kind === "prop") {
+    return "prop_reference";
+  }
+  return kind === "video" ? "shot_video" : "shot_image";
+}
+
+function filterRequestedShots(
+  shots: CreatorDevStateSnapshot["shots"],
+  shotId?: string | null,
+) {
+  if (!shotId) {
+    return shots;
+  }
+  return shots.filter((shot) => shot.id === shotId);
 }
 
 async function updateProjectPhase(

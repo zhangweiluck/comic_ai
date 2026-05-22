@@ -92,7 +92,7 @@ describe("creator application service", { concurrency: false }, () => {
         "ready",
       );
       assert.equal(reloadedState.status, 200);
-      assert.equal(reloadedState.body.project?.phase, "asset_review");
+      assert.equal(reloadedState.body.project?.phase, "export");
       assert.equal(reloadedState.body.script?.status, "parsed");
       assert.equal(reloadedState.body.shots.length, 3);
       assert.equal(reloadedState.body.calibration?.status, "passed");
@@ -341,7 +341,7 @@ describe("creator application service", { concurrency: false }, () => {
         task_status: "succeeded",
         project_phase: "asset_review",
         script_status: "parsed",
-        asset_candidate_count: 6,
+        asset_candidate_count: 3,
         shot_count: 3,
       });
     } finally {

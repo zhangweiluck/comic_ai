@@ -34,6 +34,22 @@ function postJson(url, body) {
   });
 }
 
+function patchJson(url, body) {
+  return fetchJson(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+function deleteJson(url, body) {
+  return fetchJson(url, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
 export const creatorApi = {
   getSession() {
     return fetchJson("/api/auth/session");
@@ -49,6 +65,22 @@ export const creatorApi = {
 
   createProject(input) {
     return postJson("/api/creator/project/create", input);
+  },
+
+  getProjects() {
+    return fetchJson("/api/creator/projects");
+  },
+
+  updateProject(input) {
+    return patchJson("/api/creator/project", input);
+  },
+
+  deleteProject(input) {
+    return deleteJson("/api/creator/project", input);
+  },
+
+  updateProjectCover(input) {
+    return postJson("/api/creator/project/cover", input);
   },
 
   parseScript() {
@@ -67,19 +99,63 @@ export const creatorApi = {
     return postJson("/api/creator/assets/update-label", input);
   },
 
+  getAssetLibrary() {
+    return fetchJson("/api/creator/assets/library");
+  },
+
+  importAsset(input) {
+    return postJson("/api/creator/assets/import", input);
+  },
+
+  generateAsset(input) {
+    return postJson("/api/creator/assets/generate", input);
+  },
+
+  getAssetVersions(assetId) {
+    return fetchJson(`/api/creator/assets/versions/${encodeURIComponent(assetId)}`);
+  },
+
+  createShot(input) {
+    return postJson("/api/creator/shots", input);
+  },
+
+  updateShot(input) {
+    return patchJson("/api/creator/shots", input);
+  },
+
+  deleteShot(input) {
+    return deleteJson("/api/creator/shots", input);
+  },
+
+  reorderShots(input) {
+    return postJson("/api/creator/shots/reorder", input);
+  },
+
   runCalibration() {
     return postJson("/api/creator/calibration/run");
   },
 
-  generateImages() {
-    return postJson("/api/creator/images/generate");
+  skipCalibration(input) {
+    return postJson("/api/creator/calibration/skip", input);
   },
 
-  generateVideos() {
-    return postJson("/api/creator/videos/generate");
+  overrideCalibration(input) {
+    return postJson("/api/creator/calibration/override", input);
+  },
+
+  generateImages(input) {
+    return postJson("/api/creator/images/generate", input);
+  },
+
+  generateVideos(input) {
+    return postJson("/api/creator/videos/generate", input);
   },
 
   previewExport() {
     return postJson("/api/creator/export/preview");
+  },
+
+  getExportHistory() {
+    return fetchJson("/api/creator/export/history");
   },
 };
