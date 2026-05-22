@@ -92,7 +92,7 @@ describe("creator application service", { concurrency: false }, () => {
         "ready",
       );
       assert.equal(reloadedState.status, 200);
-      assert.equal(reloadedState.body.project?.phase, "asset_review");
+      assert.equal(reloadedState.body.project?.phase, "export");
       assert.equal(reloadedState.body.script?.status, "parsed");
       assert.equal(reloadedState.body.shots.length, 3);
       assert.equal(reloadedState.body.calibration?.status, "passed");
@@ -341,7 +341,7 @@ describe("creator application service", { concurrency: false }, () => {
         task_status: "succeeded",
         project_phase: "asset_review",
         script_status: "parsed",
-        asset_candidate_count: 6,
+        asset_candidate_count: 3,
         shot_count: 3,
       });
     } finally {
@@ -418,6 +418,382 @@ describe("creator application service", { concurrency: false }, () => {
         image_task_statuses: ["succeeded", "succeeded", "succeeded"],
         video_task_statuses: ["succeeded", "succeeded", "succeeded"],
         export_task_statuses: ["succeeded"],
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("retries a single failed image and video shot through creator-facing APIs", async () => {
+    const db = await createMigratedTestDb();
+
+    try {
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-shot-retry");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      await creator.createProject({
+        user,
+        body: {
+          name: "Creator shot retry",
+          scriptInput: "Episode 6: Failed frames need creator-side retry.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-shot-retry-create",
+        now: new Date("2026-05-18T15:00:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-shot-retry-parse",
+        now: new Date("2026-05-18T15:01:00.000Z"),
+      });
+      await creator.confirmAllAssets({ user });
+      await creator.runCalibration({
+        user,
+        now: new Date("2026-05-18T15:02:00.000Z"),
+      });
+
+      const firstShot = await db.query<{ id: string }>(
+        `
+          SELECT id
+          FROM shots
+          ORDER BY created_at ASC
+          LIMIT 1
+        `,
+      );
+      const shotId = firstShot.rows[0]!.id;
+
+      await db.query(
+        `
+          UPDATE shots
+          SET image_status = 'failed',
+              current_image_asset_version_id = NULL,
+              video_status = 'not_ready',
+              updated_at = $2
+          WHERE id = $1
+        `,
+        [shotId, new Date("2026-05-18T15:03:00.000Z")],
+      );
+
+      const imageRetry = await (creator as any).retryShotImage({
+        user,
+        body: { shotId },
+        now: new Date("2026-05-18T15:04:00.000Z"),
+      });
+      await db.query(
+        `
+          UPDATE shots
+          SET video_status = 'failed',
+              current_video_asset_version_id = NULL,
+              updated_at = $2
+          WHERE id = $1
+        `,
+        [shotId, new Date("2026-05-18T15:05:00.000Z")],
+      );
+      const videoRetry = await (creator as any).retryShotVideo({
+        user,
+        body: { shotId },
+        now: new Date("2026-05-18T15:06:00.000Z"),
+      });
+
+      const state = await creator.getState({ user });
+      const taskCounts = await db.query<{
+        image_tasks: number;
+        video_tasks: number;
+      }>(
+        `
+          SELECT
+            (SELECT count(*)::int FROM tasks WHERE task_type = 'generate_shot_image') AS image_tasks,
+            (SELECT count(*)::int FROM tasks WHERE task_type = 'generate_shot_video') AS video_tasks
+        `,
+      );
+      const retriedShot = state.body.shots.find((shot) => shot.id === shotId);
+
+      assert.equal(imageRetry.status, 200);
+      assert.equal(videoRetry.status, 200);
+      assert.equal(imageRetry.body.shot.id, shotId);
+      assert.equal(videoRetry.body.shot.id, shotId);
+      assert.equal(retriedShot?.imageStatus, "completed");
+      assert.equal(retriedShot?.videoStatus, "completed");
+      assert.ok(retriedShot?.currentImageAssetVersionId);
+      assert.ok(retriedShot?.currentVideoAssetVersionId);
+      assert.deepEqual(taskCounts.rows[0], {
+        image_tasks: 1,
+        video_tasks: 1,
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("rejects shot retry before a shot has failed or gone stale", async () => {
+    const db = await createMigratedTestDb();
+
+    try {
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-retry-guard");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      await creator.createProject({
+        user,
+        body: {
+          name: "Creator retry guard",
+          scriptInput: "Episode 7: Ready shots must not be retryable.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-retry-guard-create",
+        now: new Date("2026-05-18T16:00:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-retry-guard-parse",
+        now: new Date("2026-05-18T16:01:00.000Z"),
+      });
+      await creator.confirmAllAssets({ user });
+      await creator.runCalibration({
+        user,
+        now: new Date("2026-05-18T16:02:00.000Z"),
+      });
+
+      const firstShot = await db.query<{ id: string }>(
+        `
+          SELECT id
+          FROM shots
+          ORDER BY created_at ASC
+          LIMIT 1
+        `,
+      );
+      const shotId = firstShot.rows[0]!.id;
+
+      const imageRetry = await (creator as any).retryShotImage({
+        user,
+        body: { shotId },
+        now: new Date("2026-05-18T16:03:00.000Z"),
+      });
+      const videoRetry = await (creator as any).retryShotVideo({
+        user,
+        body: { shotId },
+        now: new Date("2026-05-18T16:04:00.000Z"),
+      });
+
+      assert.equal(imageRetry.status, 409);
+      assert.deepEqual(imageRetry.body, { error: "shot_image_retry_unavailable" });
+      assert.equal(videoRetry.status, 409);
+      assert.deepEqual(videoRetry.body, { error: "current_image_required" });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("claims image shot retry before provider work under concurrent requests", async () => {
+    const db = await createMigratedTestDb();
+
+    try {
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-image-retry-race");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      await creator.createProject({
+        user,
+        body: {
+          name: "Creator image retry race",
+          scriptInput: "Episode 8: Concurrent image retry clicks must not fork provider work.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-image-retry-race-create",
+        now: new Date("2026-05-18T17:00:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-image-retry-race-parse",
+        now: new Date("2026-05-18T17:01:00.000Z"),
+      });
+      await creator.confirmAllAssets({ user });
+      await creator.runCalibration({
+        user,
+        now: new Date("2026-05-18T17:02:00.000Z"),
+      });
+
+      const firstShot = await db.query<{ id: string }>(
+        `
+          SELECT id
+          FROM shots
+          ORDER BY created_at ASC
+          LIMIT 1
+        `,
+      );
+      const shotId = firstShot.rows[0]!.id;
+
+      await db.query(
+        `
+          UPDATE shots
+          SET image_status = 'failed',
+              current_image_asset_version_id = NULL,
+              video_status = 'not_ready',
+              updated_at = $2
+          WHERE id = $1
+        `,
+        [shotId, new Date("2026-05-18T17:03:00.000Z")],
+      );
+
+      const results = await Promise.all([
+        (creator as any).retryShotImage({
+          user,
+          body: { shotId },
+          now: new Date("2026-05-18T17:04:00.000Z"),
+        }),
+        (creator as any).retryShotImage({
+          user,
+          body: { shotId },
+          now: new Date("2026-05-18T17:04:00.000Z"),
+        }),
+      ]);
+      const counts = await db.query<{
+        image_tasks: number;
+        image_provider_requests: number;
+        image_storage_objects: number;
+      }>(
+        `
+          SELECT
+            (SELECT count(*)::int FROM tasks WHERE task_type = 'generate_shot_image') AS image_tasks,
+            (SELECT count(*)::int FROM provider_requests WHERE provider_operation = 'shot.image.generate') AS image_provider_requests,
+            (SELECT count(*)::int FROM storage_objects WHERE object_key LIKE '%/image-%') AS image_storage_objects
+        `,
+      );
+
+      assert.deepEqual(
+        results.map((result) => result.status).sort(),
+        [200, 409],
+      );
+      assert.deepEqual(counts.rows[0], {
+        image_tasks: 1,
+        image_provider_requests: 1,
+        image_storage_objects: 1,
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("claims video shot retry before provider work under concurrent requests", async () => {
+    const db = await createMigratedTestDb();
+
+    try {
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-video-retry-race");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      await creator.createProject({
+        user,
+        body: {
+          name: "Creator video retry race",
+          scriptInput: "Episode 9: Concurrent video retry clicks must not fork provider work.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-video-retry-race-create",
+        now: new Date("2026-05-18T18:00:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-video-retry-race-parse",
+        now: new Date("2026-05-18T18:01:00.000Z"),
+      });
+      await creator.confirmAllAssets({ user });
+      await creator.runCalibration({
+        user,
+        now: new Date("2026-05-18T18:02:00.000Z"),
+      });
+      await creator.generateImages({
+        user,
+        now: new Date("2026-05-18T18:03:00.000Z"),
+      });
+
+      const firstShot = await db.query<{ id: string }>(
+        `
+          SELECT id
+          FROM shots
+          ORDER BY created_at ASC
+          LIMIT 1
+        `,
+      );
+      const shotId = firstShot.rows[0]!.id;
+
+      await db.query(
+        `
+          UPDATE shots
+          SET video_status = 'failed',
+              current_video_asset_version_id = NULL,
+              updated_at = $2
+          WHERE id = $1
+        `,
+        [shotId, new Date("2026-05-18T18:04:00.000Z")],
+      );
+
+      const results = await Promise.all([
+        (creator as any).retryShotVideo({
+          user,
+          body: { shotId },
+          now: new Date("2026-05-18T18:05:00.000Z"),
+        }),
+        (creator as any).retryShotVideo({
+          user,
+          body: { shotId },
+          now: new Date("2026-05-18T18:05:00.000Z"),
+        }),
+      ]);
+      const counts = await db.query<{
+        video_tasks: number;
+        video_provider_requests: number;
+        video_storage_objects: number;
+      }>(
+        `
+          SELECT
+            (SELECT count(*)::int FROM tasks WHERE task_type = 'generate_shot_video') AS video_tasks,
+            (SELECT count(*)::int FROM provider_requests WHERE provider_operation = 'shot.video.generate') AS video_provider_requests,
+            (SELECT count(*)::int FROM storage_objects WHERE object_key LIKE '%/video-%') AS video_storage_objects
+        `,
+      );
+
+      assert.deepEqual(
+        results.map((result) => result.status).sort(),
+        [200, 409],
+      );
+      assert.deepEqual(counts.rows[0], {
+        video_tasks: 1,
+        video_provider_requests: 1,
+        video_storage_objects: 1,
       });
     } finally {
       await db.close();

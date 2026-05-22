@@ -702,6 +702,254 @@ CREATE UNIQUE INDEX credit_ledger_entries_allocation_settlement_unique
   ON credit_ledger_entries (organization_id, allocation_id)
   WHERE allocation_id IS NOT NULL AND entry_type IN ('consume', 'release');
 
+CREATE TABLE credit_packages (
+  id uuid PRIMARY KEY,
+  code text NOT NULL UNIQUE,
+  display_name text NOT NULL,
+  credits integer NOT NULL CHECK (credits > 0),
+  amount_minor integer NOT NULL CHECK (amount_minor > 0),
+  currency text NOT NULL CHECK (currency IN ('CNY')),
+  status text NOT NULL CHECK (status IN ('active', 'inactive', 'archived')),
+  valid_from timestamptz NULL,
+  valid_until timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX credit_packages_active_idx
+  ON credit_packages (status, valid_from, valid_until);
+
+CREATE TABLE billing_orders (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  created_by_user_id uuid NOT NULL REFERENCES users(id),
+  order_no text NOT NULL UNIQUE,
+  credit_package_id uuid NOT NULL REFERENCES credit_packages(id),
+  package_snapshot_json jsonb NOT NULL,
+  credits integer NOT NULL CHECK (credits > 0),
+  amount_minor integer NOT NULL CHECK (amount_minor > 0),
+  currency text NOT NULL CHECK (currency IN ('CNY')),
+  status text NOT NULL CHECK (
+    status IN (
+      'pending_payment',
+      'paid',
+      'closed',
+      'expired',
+      'refund_pending',
+      'partially_refunded',
+      'refunded'
+    )
+  ),
+  idempotency_record_id uuid NULL REFERENCES idempotency_records(id),
+  idempotency_key text NULL,
+  expires_at timestamptz NOT NULL,
+  paid_at timestamptz NULL,
+  successful_payment_intent_id uuid NULL,
+  credit_grant_ledger_entry_id uuid NULL REFERENCES credit_ledger_entries(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  CONSTRAINT billing_orders_idempotency_unique
+    UNIQUE (organization_id, idempotency_record_id),
+  CONSTRAINT billing_orders_paid_requires_intent
+    CHECK (
+      status <> 'paid'
+      OR (paid_at IS NOT NULL AND successful_payment_intent_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX billing_orders_status_idx
+  ON billing_orders (organization_id, status, updated_at DESC);
+
+CREATE INDEX billing_orders_paid_without_credit_idx
+  ON billing_orders (organization_id, paid_at DESC)
+  WHERE status = 'paid' AND credit_grant_ledger_entry_id IS NULL;
+
+CREATE TABLE payment_intents (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  order_id uuid NOT NULL REFERENCES billing_orders(id),
+  provider text NOT NULL CHECK (provider IN ('wechat_pay', 'alipay')),
+  product_mode text NOT NULL,
+  status text NOT NULL CHECK (
+    status IN (
+      'created',
+      'submitted',
+      'succeeded',
+      'failed',
+      'closed',
+      'expired',
+      'unknown'
+    )
+  ),
+  amount_minor integer NOT NULL CHECK (amount_minor > 0),
+  currency text NOT NULL CHECK (currency IN ('CNY')),
+  merchant_order_no text NOT NULL,
+  provider_trade_id text NULL,
+  provider_payload_hash text NOT NULL,
+  provider_safe_metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  submitted_at timestamptz NULL,
+  succeeded_at timestamptz NULL,
+  expires_at timestamptz NOT NULL,
+  idempotency_record_id uuid NULL REFERENCES idempotency_records(id),
+  idempotency_key text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  CONSTRAINT payment_intents_order_fk
+    FOREIGN KEY (organization_id, order_id)
+    REFERENCES billing_orders (organization_id, id),
+  CONSTRAINT payment_intents_provider_order_unique
+    UNIQUE (provider, merchant_order_no)
+);
+
+CREATE UNIQUE INDEX payment_intents_provider_trade_unique
+  ON payment_intents (provider, provider_trade_id)
+  WHERE provider_trade_id IS NOT NULL;
+
+CREATE UNIQUE INDEX payment_intents_order_success_unique
+  ON payment_intents (organization_id, order_id)
+  WHERE status = 'succeeded';
+
+CREATE TABLE payment_provider_events (
+  id uuid PRIMARY KEY,
+  organization_id uuid NULL REFERENCES organizations(id),
+  order_id uuid NULL REFERENCES billing_orders(id),
+  payment_intent_id uuid NULL REFERENCES payment_intents(id),
+  provider text NOT NULL CHECK (provider IN ('wechat_pay', 'alipay')),
+  provider_event_dedup_key text NOT NULL,
+  merchant_order_no text NULL,
+  provider_trade_id text NULL,
+  event_type text NOT NULL CHECK (
+    event_type IN (
+      'payment_succeeded',
+      'payment_failed',
+      'payment_closed',
+      'refund_succeeded',
+      'unknown'
+    )
+  ),
+  signature_status text NOT NULL CHECK (
+    signature_status IN ('unverified', 'verified', 'invalid')
+  ),
+  processing_status text NOT NULL CHECK (
+    processing_status IN (
+      'received',
+      'processed',
+      'duplicate',
+      'rejected',
+      'unmatched',
+      'manual_review_required'
+    )
+  ),
+  raw_payload_hash text NOT NULL,
+  normalized_payload_json jsonb NULL,
+  ack_status text NULL CHECK (
+    ack_status IS NULL OR ack_status IN ('not_sent', 'sent_success', 'sent_failure')
+  ),
+  failure_code text NULL,
+  received_at timestamptz NOT NULL,
+  processed_at timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (provider, provider_event_dedup_key),
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, order_id)
+    REFERENCES billing_orders (organization_id, id),
+  FOREIGN KEY (organization_id, payment_intent_id)
+    REFERENCES payment_intents (organization_id, id)
+);
+
+CREATE INDEX payment_provider_events_status_idx
+  ON payment_provider_events (processing_status, received_at DESC);
+
+CREATE TABLE payment_risk_events (
+  id uuid PRIMARY KEY,
+  organization_id uuid NULL REFERENCES organizations(id),
+  user_id uuid NULL REFERENCES users(id),
+  order_id uuid NULL REFERENCES billing_orders(id),
+  payment_intent_id uuid NULL REFERENCES payment_intents(id),
+  provider_event_id uuid NULL REFERENCES payment_provider_events(id),
+  risk_type text NOT NULL CHECK (
+    risk_type IN (
+      'rate_limited',
+      'signature_invalid',
+      'amount_mismatch',
+      'currency_mismatch',
+      'merchant_mismatch',
+      'duplicate_trade',
+      'refund_requires_review',
+      'callback_event_requires_review',
+      'high_value_first_purchase'
+    )
+  ),
+  severity text NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+  decision text NOT NULL CHECK (decision IN ('allow', 'block', 'manual_review')),
+  status text NOT NULL DEFAULT 'open' CHECK (
+    status IN ('open', 'reviewed', 'ignored_with_reason')
+  ),
+  metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  reviewed_by_user_id uuid NULL REFERENCES users(id),
+  reviewed_at timestamptz NULL,
+  review_reason text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, order_id)
+    REFERENCES billing_orders (organization_id, id),
+  FOREIGN KEY (organization_id, payment_intent_id)
+    REFERENCES payment_intents (organization_id, id)
+);
+
+CREATE INDEX payment_risk_events_open_idx
+  ON payment_risk_events (organization_id, status, created_at DESC);
+
+CREATE TABLE payment_reconciliation_runs (
+  id uuid PRIMARY KEY,
+  organization_id uuid NULL REFERENCES organizations(id),
+  provider text NOT NULL CHECK (provider IN ('wechat_pay', 'alipay', 'all')),
+  run_type text NOT NULL CHECK (
+    run_type IN ('recent', 'expiry', 'paid_without_credit', 'daily_settlement')
+  ),
+  status text NOT NULL CHECK (
+    status IN ('running', 'succeeded', 'failed', 'partial_failed')
+  ),
+  summary_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  started_at timestamptz NOT NULL,
+  finished_at timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE payment_reconciliation_items (
+  id uuid PRIMARY KEY,
+  organization_id uuid NULL REFERENCES organizations(id),
+  run_id uuid NULL REFERENCES payment_reconciliation_runs(id),
+  order_id uuid NULL REFERENCES billing_orders(id),
+  payment_intent_id uuid NULL REFERENCES payment_intents(id),
+  provider_trade_id text NULL,
+  issue_type text NOT NULL CHECK (
+    issue_type IN (
+      'missing_callback',
+      'paid_without_credit',
+      'amount_mismatch',
+      'provider_paid_platform_unpaid',
+      'platform_paid_provider_unpaid',
+      'refund_mismatch',
+      'invoice_refund_mismatch'
+    )
+  ),
+  status text NOT NULL CHECK (
+    status IN ('open', 'resolved', 'manual_review_required', 'ignored_with_reason')
+  ),
+  resolution_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX payment_reconciliation_items_open_idx
+  ON payment_reconciliation_items (organization_id, status, issue_type, created_at DESC);
+
 CREATE TABLE audit_events (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id),

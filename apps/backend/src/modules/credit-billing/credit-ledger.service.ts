@@ -10,7 +10,7 @@ import type { SqlDatabase } from "../shared/db/sql.ts";
 import { queryOne } from "../shared/db/sql.ts";
 
 type CreditLedgerEntryType = "grant" | "reservation" | "consume" | "release";
-type CreditAllocationOutcome = Extract<
+export type CreditAllocationOutcome = Extract<
   CreditReservationAllocationStatus,
   "consumed" | "released" | "manual_review_required"
 >;
@@ -199,7 +199,35 @@ export async function grantCredits(
 
   await db.query("BEGIN");
   try {
-    const inserted = await insertLedgerEntry(db, {
+    const entry = await grantCreditsInTransaction(db, {
+      ...input,
+      reason,
+    });
+
+    await db.query("COMMIT");
+    return entry;
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+}
+
+export async function grantCreditsInTransaction(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    amount: number;
+    sourceType: string;
+    sourceId: string;
+    reason?: string | null;
+    metadata?: Record<string, unknown>;
+    createdByUserId?: string | null;
+    now: Date;
+  },
+): Promise<CreditLedgerEntryRecord> {
+  assertPositiveAmount(input.amount);
+  const reason = requireCreditReason(input.reason);
+  const inserted = await insertLedgerEntry(db, {
       organizationId: input.organizationId,
       reservationId: null,
       allocationId: null,
@@ -216,29 +244,24 @@ export async function grantCredits(
       now: input.now,
     });
 
-    if (inserted.kind === "inserted") {
-      await db.query(
-        `
+  if (inserted.kind === "inserted") {
+    await db.query(
+      `
           UPDATE organizations
           SET credit_balance_cached = credit_balance_cached + $2,
               updated_at = $3
           WHERE id = $1
         `,
-        [input.organizationId, input.amount, input.now],
-      );
-      await appendCreditGrantCreatedOutboxEvent(db, {
-        organizationId: input.organizationId,
-        ledgerEntry: inserted.entry,
-        now: input.now,
-      });
-    }
-
-    await db.query("COMMIT");
-    return inserted.entry;
-  } catch (error) {
-    await db.query("ROLLBACK");
-    throw error;
+      [input.organizationId, input.amount, input.now],
+    );
+    await appendCreditGrantCreatedOutboxEvent(db, {
+      organizationId: input.organizationId,
+      ledgerEntry: inserted.entry,
+      now: input.now,
+    });
   }
+
+  return inserted.entry;
 }
 
 export async function reserveCredits(
@@ -406,159 +429,179 @@ export async function settleReservationAllocation(
   ledgerEntry: CreditLedgerEntryRecord | null;
   reservation: CreditReservationRecord;
 }> {
-  assertPositiveAmount(input.amount);
-
   await db.query("BEGIN");
   try {
-    const reservation = await findReservationById(db, input.reservationId);
-    if (!reservation) {
-      throw new CreditReservationNotFoundError();
-    }
-
-    const existingAllocation = await findAllocationByKey(db, {
-      reservationId: input.reservationId,
-      allocationKey: input.allocationKey,
-    });
-
-    if (existingAllocation) {
-      assertAllocationReplayMatches(existingAllocation, input);
-
-      const ledgerEntry = existingAllocation.settledLedgerEntryId
-        ? await findLedgerEntryById(db, existingAllocation.settledLedgerEntryId)
-        : null;
-
-      await db.query("COMMIT");
-      return {
-        allocation: existingAllocation,
-        ledgerEntry,
-        reservation,
-      };
-    }
-
-    const allocationId = randomUUID();
-    const allocationRow = await queryOne<CreditReservationAllocationRow>(
-      db,
-      `
-        INSERT INTO credit_reservation_allocations (
-          id,
-          reservation_id,
-          organization_id,
-          task_id,
-          attempt_id,
-          provider_request_id,
-          allocation_key,
-          amount,
-          status,
-          metadata_json,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $11)
-        RETURNING *
-      `,
-      [
-        allocationId,
-        reservation.id,
-        reservation.organizationId,
-        input.taskId ?? null,
-        input.attemptId ?? null,
-        input.providerRequestId ?? null,
-        input.allocationKey,
-        input.amount,
-        input.outcome,
-        JSON.stringify(input.metadata ?? {}),
-        input.now,
-      ],
-    );
-
-    if (input.outcome === "manual_review_required") {
-      const reviewedReservation = await markReservationManualReviewRequired(db, {
-        reservationId: reservation.id,
-        now: input.now,
-      });
-
-      await db.query("COMMIT");
-      return {
-        allocation: allocationFromRow(allocationRow!),
-        ledgerEntry: null,
-        reservation: reviewedReservation,
-      };
-    }
-
-    const ledgerEntryType = input.outcome === "consumed" ? "consume" : "release";
-    const deltas =
-      input.outcome === "consumed"
-        ? {
-            availableDelta: 0,
-            reservedDelta: -input.amount,
-            consumedDelta: input.amount,
-          }
-        : {
-            availableDelta: input.amount,
-            reservedDelta: -input.amount,
-            consumedDelta: 0,
-          };
-
-    const updatedReservation = await applyReservationSettlement(db, {
-      reservationId: reservation.id,
-      amount: input.amount,
-      outcome: input.outcome,
-      now: input.now,
-    });
-
-    const ledger = await insertLedgerEntry(db, {
-      organizationId: reservation.organizationId,
-      reservationId: reservation.id,
-      allocationId,
-      entryType: ledgerEntryType,
-      amount: input.amount,
-      ...deltas,
-      sourceType: "credit_reservation_allocation",
-      sourceId: allocationId,
-      reason: `reservation allocation ${input.outcome}`,
-      metadata: input.metadata ?? {},
-      createdByUserId: null,
-      now: input.now,
-    });
-
-    await db.query(
-      `
-        UPDATE organizations
-        SET credit_balance_cached = credit_balance_cached + $2,
-            credit_reserved_cached = credit_reserved_cached - $3,
-            updated_at = $4
-        WHERE id = $1
-      `,
-      [
-        reservation.organizationId,
-        input.outcome === "released" ? input.amount : 0,
-        input.amount,
-        input.now,
-      ],
-    );
-
-    const settledAllocation = await queryOne<CreditReservationAllocationRow>(
-      db,
-      `
-        UPDATE credit_reservation_allocations
-        SET settled_ledger_entry_id = $2,
-            updated_at = $3
-        WHERE id = $1
-        RETURNING *
-      `,
-      [allocationId, ledger.entry.id, input.now],
-    );
-
+    const result = await settleReservationAllocationInTransaction(db, input);
     await db.query("COMMIT");
-    return {
-      allocation: allocationFromRow(settledAllocation!),
-      ledgerEntry: ledger.entry,
-      reservation: updatedReservation,
-    };
+    return result;
   } catch (error) {
     await db.query("ROLLBACK");
     throw error;
   }
+}
+
+export async function settleReservationAllocationInTransaction(
+  db: SqlDatabase,
+  input: {
+    reservationId: string;
+    allocationKey: string;
+    amount: number;
+    outcome: CreditAllocationOutcome;
+    taskId?: string | null;
+    attemptId?: string | null;
+    providerRequestId?: string | null;
+    metadata?: Record<string, unknown>;
+    now: Date;
+  },
+): Promise<{
+  allocation: CreditReservationAllocationRecord;
+  ledgerEntry: CreditLedgerEntryRecord | null;
+  reservation: CreditReservationRecord;
+}> {
+  assertPositiveAmount(input.amount);
+
+  const reservation = await findReservationById(db, input.reservationId);
+  if (!reservation) {
+    throw new CreditReservationNotFoundError();
+  }
+
+  const existingAllocation = await findAllocationByKey(db, {
+    reservationId: input.reservationId,
+    allocationKey: input.allocationKey,
+  });
+
+  if (existingAllocation) {
+    assertAllocationReplayMatches(existingAllocation, input);
+
+    const ledgerEntry = existingAllocation.settledLedgerEntryId
+      ? await findLedgerEntryById(db, existingAllocation.settledLedgerEntryId)
+      : null;
+
+    return {
+      allocation: existingAllocation,
+      ledgerEntry,
+      reservation,
+    };
+  }
+
+  const allocationId = randomUUID();
+  const allocationRow = await queryOne<CreditReservationAllocationRow>(
+    db,
+    `
+      INSERT INTO credit_reservation_allocations (
+        id,
+        reservation_id,
+        organization_id,
+        task_id,
+        attempt_id,
+        provider_request_id,
+        allocation_key,
+        amount,
+        status,
+        metadata_json,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $11)
+      RETURNING *
+    `,
+    [
+      allocationId,
+      reservation.id,
+      reservation.organizationId,
+      input.taskId ?? null,
+      input.attemptId ?? null,
+      input.providerRequestId ?? null,
+      input.allocationKey,
+      input.amount,
+      input.outcome,
+      JSON.stringify(input.metadata ?? {}),
+      input.now,
+    ],
+  );
+
+  if (input.outcome === "manual_review_required") {
+    const reviewedReservation = await markReservationManualReviewRequired(db, {
+      reservationId: reservation.id,
+      now: input.now,
+    });
+
+    return {
+      allocation: allocationFromRow(allocationRow!),
+      ledgerEntry: null,
+      reservation: reviewedReservation,
+    };
+  }
+
+  const ledgerEntryType = input.outcome === "consumed" ? "consume" : "release";
+  const deltas =
+    input.outcome === "consumed"
+      ? {
+          availableDelta: 0,
+          reservedDelta: -input.amount,
+          consumedDelta: input.amount,
+        }
+      : {
+          availableDelta: input.amount,
+          reservedDelta: -input.amount,
+          consumedDelta: 0,
+        };
+
+  const updatedReservation = await applyReservationSettlement(db, {
+    reservationId: reservation.id,
+    amount: input.amount,
+    outcome: input.outcome,
+    now: input.now,
+  });
+
+  const ledger = await insertLedgerEntry(db, {
+    organizationId: reservation.organizationId,
+    reservationId: reservation.id,
+    allocationId,
+    entryType: ledgerEntryType,
+    amount: input.amount,
+    ...deltas,
+    sourceType: "credit_reservation_allocation",
+    sourceId: allocationId,
+    reason: `reservation allocation ${input.outcome}`,
+    metadata: input.metadata ?? {},
+    createdByUserId: null,
+    now: input.now,
+  });
+
+  await db.query(
+    `
+      UPDATE organizations
+      SET credit_balance_cached = credit_balance_cached + $2,
+          credit_reserved_cached = credit_reserved_cached - $3,
+          updated_at = $4
+      WHERE id = $1
+    `,
+    [
+      reservation.organizationId,
+      input.outcome === "released" ? input.amount : 0,
+      input.amount,
+      input.now,
+    ],
+  );
+
+  const settledAllocation = await queryOne<CreditReservationAllocationRow>(
+    db,
+    `
+      UPDATE credit_reservation_allocations
+      SET settled_ledger_entry_id = $2,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [allocationId, ledger.entry.id, input.now],
+  );
+
+  return {
+    allocation: allocationFromRow(settledAllocation!),
+    ledgerEntry: ledger.entry,
+    reservation: updatedReservation,
+  };
 }
 
 export async function repairCreditBalanceCache(

@@ -331,6 +331,72 @@ describe("phone auth dev server", () => {
     }
   });
 
+  it("rejects creator-side single shot retry routes before a shot has failed", async () => {
+    const server = createPhoneAuthDevServer();
+
+    try {
+      await server.listen(0);
+
+      const cookie = await login(server.origin, "13800138000");
+
+      await fetch(`${server.origin}/api/creator/project/create`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          name: "Creator retry route smoke test",
+          scriptInput: "Episode 3: A creator retries one failed frame.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        }),
+      });
+      await fetch(`${server.origin}/api/creator/parse`, {
+        method: "POST",
+        headers: { cookie },
+      });
+      await fetch(`${server.origin}/api/creator/assets/confirm-all`, {
+        method: "POST",
+        headers: { cookie },
+      });
+      await fetch(`${server.origin}/api/creator/calibration/run`, {
+        method: "POST",
+        headers: { cookie },
+      });
+
+      const stateResponse = await fetch(`${server.origin}/api/creator/state`, {
+        headers: { cookie },
+      });
+      const state = await stateResponse.json();
+      const shotId = state.shots[0].id;
+
+      const imageRetryResponse = await fetch(
+        `${server.origin}/api/creator/shots/${shotId}/image/retry`,
+        {
+          method: "POST",
+          headers: { cookie },
+        },
+      );
+      const imageRetry = await imageRetryResponse.json();
+      const videoRetryResponse = await fetch(
+        `${server.origin}/api/creator/shots/${shotId}/video/retry`,
+        {
+          method: "POST",
+          headers: { cookie },
+        },
+      );
+      const videoRetry = await videoRetryResponse.json();
+
+      assert.equal(imageRetryResponse.status, 409);
+      assert.equal(videoRetryResponse.status, 409);
+      assert.deepEqual(imageRetry, { error: "shot_image_retry_unavailable" });
+      assert.deepEqual(videoRetry, { error: "current_image_required" });
+    } finally {
+      await server.close();
+    }
+  });
+
   it("exposes a package script for starting the dev server", async () => {
     const packageJson = await readFile(
       new URL("../../../../../package.json", import.meta.url),
@@ -342,22 +408,52 @@ describe("phone auth dev server", () => {
     );
 
     assert.match(packageJson, /"dev:phone-auth"/);
+    assert.match(packageJson, /--import tsx/);
     assert.match(packageJson, /run-phone-auth-dev-server\.mjs/);
     assert.match(launcherScript, /phone-auth-dev-server\.ts/);
-    assert.match(launcherScript, /tsx/);
   });
 
-  it("uses a loader-based launcher that starts the dev server explicitly", async () => {
+  it("uses an import-based launcher that starts the dev server explicitly", async () => {
     const launcherScript = await readFile(
       new URL("../../../../../scripts/run-phone-auth-dev-server.mjs", import.meta.url),
+      "utf8",
+    );
+    const packageJson = await readFile(
+      new URL("../../../../../package.json", import.meta.url),
       "utf8",
     );
 
     assert.match(launcherScript, /createPhoneAuthDevServer/);
     assert.match(launcherScript, /server\.listen\(port\)/);
     assert.match(launcherScript, /process\.env\.PORT/);
-    assert.match(launcherScript, /--loader/);
+    assert.match(packageJson, /--import tsx/);
+    assert.doesNotMatch(launcherScript, /--loader/);
     assert.match(launcherScript, /loadDotEnvFile/);
     assert.match(launcherScript, /\.env/);
   });
 });
+
+async function login(origin: string, phone: string) {
+  const requestResponse = await fetch(`${origin}/api/auth/code/request`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ phone }),
+  });
+  const requested = await requestResponse.json();
+  const debugResponse = await fetch(
+    `${origin}/api/auth/dev/challenges/${requested.challengeId}`,
+  );
+  const debug = await debugResponse.json();
+  const verifyResponse = await fetch(`${origin}/api/auth/code/verify`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      challengeId: requested.challengeId,
+      phone,
+      code: debug.code,
+    }),
+  });
+
+  assert.equal(verifyResponse.status, 200);
+  return verifyResponse.headers.get("set-cookie") ?? "";
+}

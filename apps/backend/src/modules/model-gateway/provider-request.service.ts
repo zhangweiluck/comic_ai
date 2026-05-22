@@ -238,6 +238,25 @@ export async function markExternalSubmissionStarted(
   return (await findProviderRequestById(db, input.providerRequestId))!;
 }
 
+export async function hasExternalProviderSubmissionStartedForTask(
+  db: SqlDatabase,
+  input: { taskId: string },
+): Promise<boolean> {
+  const result = await db.query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM provider_requests
+        WHERE task_id = $1
+          AND external_submission_started_at IS NOT NULL
+      ) AS exists
+    `,
+    [input.taskId],
+  );
+
+  return result.rows[0]?.exists ?? false;
+}
+
 async function tryMarkExternalSubmissionStarted(
   db: SqlDatabase,
   input: {

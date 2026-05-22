@@ -5,6 +5,11 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 import { maskCnPhone } from "../modules/identity/phone-auth.utils.ts";
+import { createAdminOpsService } from "../modules/admin-ops/admin-ops.service.ts";
+import {
+  createCommercePaymentService,
+  ensureDefaultCreditPackage,
+} from "../modules/commerce-payment/commerce-payment.service.ts";
 import {
   createPersistentLoginChallenge,
   findPersistentAuthSessionByToken,
@@ -21,6 +26,7 @@ import { createMigratedTestDb } from "../modules/shared/db/test-db.ts";
 const webRoot = join(process.cwd(), "apps", "web");
 const devOrganizationId = "10000000-0000-4000-8000-000000000001";
 const devWorkspaceId = "20000000-0000-4000-8000-000000000001";
+const devPaymentCallbackSecret = "dev-payment-secret";
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -76,6 +82,22 @@ function clearSessionCookie(): string {
   return "auth_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 }
 
+function requiredIdempotencyKeyFromRequest(request: {
+  headers: Record<string, string | string[] | undefined>;
+}) {
+  const header = request.headers["idempotency-key"];
+  const value = Array.isArray(header) ? header[0] : header;
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function writeIdempotencyKeyRequired(response: ServerResponse) {
+  return writeJson(response, {
+    status: 400,
+    body: { error: "idempotency_key_required" },
+  });
+}
+
 function writeJson(response: ServerResponse, payload: AuthHttpResponse<unknown>) {
   response.statusCode = payload.status;
   response.setHeader("content-type", "application/json; charset=utf-8");
@@ -105,6 +127,13 @@ async function ensureDevWorkspaceAccess(
   db: Awaited<ReturnType<typeof createMigratedTestDb>>,
   userId: string,
 ) {
+  const user = await queryOne<{ phone_e164: string }>(
+    db,
+    "SELECT phone_e164 FROM users WHERE id = $1",
+    [userId],
+  );
+  const role = user?.phone_e164 === "+8613800138001" ? "owner_admin" : "creator";
+
   await db.query(
     `
       INSERT INTO organizations (id, name, status)
@@ -124,11 +153,11 @@ async function ensureDevWorkspaceAccess(
   await db.query(
     `
       INSERT INTO memberships (id, organization_id, workspace_id, user_id, role, status)
-      VALUES ($1, $2, $3, $4, 'creator', 'active')
+      VALUES ($1, $2, $3, $4, $5, 'active')
       ON CONFLICT (organization_id, workspace_id, user_id)
-      DO UPDATE SET role = 'creator', status = 'active'
+      DO UPDATE SET role = EXCLUDED.role, status = 'active'
     `,
-    [randomUUID(), devOrganizationId, devWorkspaceId, userId],
+    [randomUUID(), devOrganizationId, devWorkspaceId, userId, role],
   );
 }
 
@@ -360,6 +389,108 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
         });
       }
 
+      if (
+        request.method === "POST" &&
+        pathname === "/api/billing/payment-callback/mock"
+      ) {
+        const commercePayment = createCommercePaymentService({
+          db,
+          workspaceId: devWorkspaceId,
+          callbackSecret: devPaymentCallbackSecret,
+        });
+        const body = (await readJsonBody(request)) as {
+          provider: "wechat_pay" | "alipay";
+          providerEventDedupKey: string;
+          merchantOrderNo: string;
+          providerTradeId: string;
+          eventType:
+            | "payment_succeeded"
+            | "payment_failed"
+            | "payment_closed"
+            | "refund_succeeded"
+            | "unknown";
+          amountMinor: number;
+          currency: string;
+          merchantId: string;
+          signature: string;
+        };
+        return writeJson(
+          response,
+          await commercePayment.processPaymentCallback({
+            body,
+            now: new Date(),
+          }),
+        );
+      }
+
+      if (pathname.startsWith("/api/billing/")) {
+        const authenticated = await findAuthenticatedUser(
+          db,
+          request.headers.cookie,
+          new Date(),
+        );
+        if (!authenticated) {
+          return writeJson(response, {
+            status: 401,
+            body: { error: "unauthenticated" },
+          });
+        }
+
+        await ensureDefaultCreditPackage(db, { now: new Date() });
+        const commercePayment = createCommercePaymentService({
+          db,
+          workspaceId: devWorkspaceId,
+          callbackSecret: devPaymentCallbackSecret,
+        });
+
+        if (request.method === "GET" && pathname === "/api/billing/packages") {
+          return writeJson(response, await commercePayment.listCreditPackages());
+        }
+
+        if (request.method === "POST" && pathname === "/api/billing/orders") {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            creditPackageId: string;
+          };
+          return writeJson(
+            response,
+            await commercePayment.createBillingOrder({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "POST" &&
+          pathname === "/api/billing/payment-intents"
+        ) {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            orderId: string;
+            provider: "wechat_pay" | "alipay";
+            productMode: string;
+          };
+          return writeJson(
+            response,
+            await commercePayment.createPaymentIntent({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
+              now: new Date(),
+            }),
+          );
+        }
+      }
+
       if (pathname.startsWith("/api/creator/")) {
         const authenticated = await findAuthenticatedUser(
           db,
@@ -527,6 +658,25 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           );
         }
 
+        if (
+          request.method === "POST" &&
+          pathname.startsWith("/api/creator/shots/") &&
+          pathname.endsWith("/image/retry")
+        ) {
+          const shotId = pathname.split("/").at(-3) ?? "";
+          return writeJson(
+            response,
+            await creatorApplication.retryShotImage({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body: { shotId },
+              now: new Date(),
+            }),
+          );
+        }
+
         if (request.method === "POST" && pathname === "/api/creator/videos/generate") {
           return writeJson(
             response,
@@ -535,6 +685,25 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
                 id: authenticated.user.id,
                 sessionToken: authenticated.sessionToken,
               },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "POST" &&
+          pathname.startsWith("/api/creator/shots/") &&
+          pathname.endsWith("/video/retry")
+        ) {
+          const shotId = pathname.split("/").at(-3) ?? "";
+          return writeJson(
+            response,
+            await creatorApplication.retryShotVideo({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body: { shotId },
               now: new Date(),
             }),
           );
@@ -561,6 +730,125 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
                 id: authenticated.user.id,
                 sessionToken: authenticated.sessionToken,
               },
+              now: new Date(),
+            }),
+          );
+        }
+      }
+
+      if (pathname.startsWith("/api/admin/ops/")) {
+        const authenticated = await findAuthenticatedUser(
+          db,
+          request.headers.cookie,
+          new Date(),
+        );
+        if (!authenticated) {
+          return writeJson(response, {
+            status: 401,
+            body: { error: "unauthenticated" },
+          });
+        }
+
+        const adminOps = createAdminOpsService({
+          db,
+          workspaceId: devWorkspaceId,
+        });
+
+        if (request.method === "GET" && pathname === "/api/admin/ops/items") {
+          return writeJson(
+            response,
+            await adminOps.listItems({
+              user: { sessionToken: authenticated.sessionToken },
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "POST" &&
+          pathname === "/api/admin/ops/tasks/manual-settle"
+        ) {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            taskId: string;
+            decision: "consume" | "release" | "mark_abnormal_cost";
+            reason: string;
+          };
+          return writeJson(
+            response,
+            await adminOps.manualSettleTask({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/admin/ops/tasks/retry") {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            taskId: string;
+            reason: string;
+          };
+          return writeJson(
+            response,
+            await adminOps.retryTask({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "POST" &&
+          pathname === "/api/admin/ops/payment-risks/mark-reviewed"
+        ) {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            riskEventId: string;
+            reason: string;
+          };
+          return writeJson(
+            response,
+            await adminOps.markPaymentRiskReviewed({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "POST" &&
+          pathname === "/api/admin/ops/payments/repair-paid-without-credit"
+        ) {
+          const idempotencyKey = requiredIdempotencyKeyFromRequest(request);
+          if (!idempotencyKey) {
+            return writeIdempotencyKeyRequired(response);
+          }
+          const body = (await readJsonBody(request)) as {
+            orderId: string;
+            reason: string;
+          };
+          return writeJson(
+            response,
+            await adminOps.repairPaidWithoutCredit({
+              user: { sessionToken: authenticated.sessionToken },
+              body,
+              idempotencyKey,
               now: new Date(),
             }),
           );

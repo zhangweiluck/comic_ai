@@ -1,9 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 
-const runtime = findNodeRuntime(18);
-const serverEntrypoint = join(process.cwd(), "apps", "backend", "src", "entrypoints", "phone-auth-dev-server.ts");
+const serverEntrypoint = join(
+  process.cwd(),
+  "apps",
+  "backend",
+  "src",
+  "entrypoints",
+  "phone-auth-dev-server.ts",
+);
 const envFilePath = join(process.cwd(), ".env");
 
 if (!existsSync(serverEntrypoint)) {
@@ -13,78 +18,20 @@ if (!existsSync(serverEntrypoint)) {
 
 loadDotEnvFile(envFilePath);
 
-const result = spawnSync(
-  runtime,
-  [
-    "--loader",
-    "tsx",
-    "--input-type=module",
-    "--eval",
-    `import(${JSON.stringify(pathToFileUrl(serverEntrypoint))}).then(async ({ createPhoneAuthDevServer }) => {
-      const server = createPhoneAuthDevServer();
-      const port = Number(process.env.PORT ?? "4310");
-      await server.listen(port);
-      console.log("Phone auth dev server listening on " + server.origin);
-      setInterval(() => {}, 1000);
-    }).catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });`,
-  ],
-  {
-    env: process.env,
-    stdio: "inherit",
-  },
-);
-
-process.exit(result.status ?? 1);
+try {
+  const { createPhoneAuthDevServer } = await import(pathToFileUrl(serverEntrypoint));
+  const server = createPhoneAuthDevServer();
+  const port = Number(process.env.PORT ?? "4310");
+  await server.listen(port);
+  console.log("Phone auth dev server listening on " + server.origin);
+  setInterval(() => {}, 1000);
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}
 
 function pathToFileUrl(filePath) {
   return `file:///${filePath.replace(/\\/g, "/")}`;
-}
-
-function findNodeRuntime(minMajor) {
-  const candidates = [];
-  const seen = new Set();
-
-  addCandidate(process.execPath);
-
-  const whereNode = spawnSync("where", ["node"], {
-    encoding: "utf8",
-    shell: process.platform === "win32",
-  });
-
-  if (whereNode.status === 0) {
-    for (const line of whereNode.stdout.split(/\r?\n/)) {
-      addCandidate(line.trim());
-    }
-  }
-
-  for (const candidate of candidates) {
-    const version = spawnSync(candidate, ["--version"], {
-      encoding: "utf8",
-    });
-
-    if (version.status !== 0) {
-      continue;
-    }
-
-    const match = version.stdout.trim().match(/^v(\d+)\./);
-    if (match && Number(match[1]) >= minMajor) {
-      return candidate;
-    }
-  }
-
-  console.error(`Unable to find a Node.js runtime >= ${minMajor}.`);
-  process.exit(1);
-
-  function addCandidate(candidate) {
-    if (!candidate || seen.has(candidate)) {
-      return;
-    }
-    seen.add(candidate);
-    candidates.push(candidate);
-  }
 }
 
 function loadDotEnvFile(envFilePath) {

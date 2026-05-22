@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import { appendAuditEvent, type AuditEventRecord } from "../audit/audit.service.ts";
+import { hasExternalProviderSubmissionStartedForTask } from "../model-gateway/provider-request.service.ts";
 import { resolveActorContext } from "../organization/actor-context.service.ts";
 import type { SqlDatabase } from "../shared/db/sql.ts";
 import {
@@ -10,7 +13,6 @@ import { upsertAssetVersionSnapshot } from "./asset-version-record.service.ts";
 import { computeAssetReviewSummary } from "./asset-review.service.ts";
 import {
   assetReviewStateFromRecords,
-  listAssetReviewCandidatesForProject,
   confirmAllAssetReviewCandidateRecords,
   confirmAssetReviewCandidateRecord,
   listAssetReviewCandidatesForProject,
@@ -29,7 +31,15 @@ import {
   createExportRecord,
   listExportRecordsForProject,
 } from "./export-record.service.ts";
-import { listShotsForProject, replaceShotsForProject, upsertShotsForProject } from "./shot-record.service.ts";
+import {
+  claimShotImageRetryForTask,
+  claimShotVideoRetryForTask,
+  listShotsForProject,
+  releaseShotImageRetryClaim,
+  releaseShotVideoRetryClaim,
+  replaceShotsForProject,
+  upsertShotsForProject,
+} from "./shot-record.service.ts";
 import {
   createSqlParseScriptCommandHandler,
   createSqlProjectCommandHandler,
@@ -658,6 +668,157 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
       };
     },
 
+    async retryShotImage(input: {
+      user: AuthenticatedCreatorUser;
+      body: { shotId: string };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = sqlState.projectId;
+      if (!projectId) {
+        return {
+          status: 409,
+          body: { error: "creator_project_missing" },
+        };
+      }
+
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const shot = await findProjectShot(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        shotId: input.body.shotId,
+      });
+      if (!shot) {
+        return {
+          status: 404,
+          body: { error: "shot_not_found" },
+        };
+      }
+      const retryableImageStatus = shot.imageStatus;
+      if (retryableImageStatus !== "failed" && retryableImageStatus !== "stale") {
+        return {
+          status: 409,
+          body: { error: "shot_image_retry_unavailable" },
+        };
+      }
+
+      const taskId = randomUUID();
+      const claimedShot = await claimShotImageRetryForTask(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        shotId: shot.id,
+        taskId,
+        now: input.now,
+      });
+      if (!claimedShot) {
+        return {
+          status: 409,
+          body: { error: "shot_image_retry_unavailable" },
+        };
+      }
+
+      let platform: Awaited<ReturnType<typeof requestCreatorImageGenerationPlatformBatch>>;
+      try {
+        platform = await requestCreatorImageGenerationPlatformBatch(deps.db, {
+          sessionToken: input.user.sessionToken,
+          projectId,
+          now: input.now,
+          shots: [claimedShot],
+        }, {
+          deferFinalization: true,
+          taskIdsByShotId: { [claimedShot.id]: taskId },
+        });
+      } catch (error) {
+        await releaseImageRetryClaimIfSafe(deps.db, {
+          organizationId: actor.organizationId,
+          projectId,
+          shotId: shot.id,
+          taskId,
+          previousStatus: retryableImageStatus,
+          now: input.now,
+        });
+        throw error;
+      }
+      const task = platform.tasks[0];
+      if (!task) {
+        await releaseImageRetryClaimIfSafe(deps.db, {
+          organizationId: actor.organizationId,
+          projectId,
+          shotId: shot.id,
+          taskId,
+          previousStatus: retryableImageStatus,
+          now: input.now,
+        });
+        return {
+          status: 409,
+          body: { error: "shot_image_retry_unavailable" },
+        };
+      }
+
+      const generated = await creatorApp.generateImagesForTasks([
+        {
+          shotId: shot.id,
+          taskId: task.taskId,
+          storageObjectKey: task.storageObjectKey,
+          sourceAttemptId: task.attemptId,
+        },
+      ]);
+      const success = (
+        generated.successes as Array<{
+          shot: ShotRecord;
+          asset: Parameters<typeof upsertAssetVersionSnapshot>[1]["asset"];
+          version: Parameters<typeof upsertAssetVersionSnapshot>[1]["version"];
+        }>
+      ).find((candidate) => candidate.version.sourceTaskId === task.taskId);
+      const retriedShot = (generated.shots as ShotRecord[]).find(
+        (candidate) => candidate.id === shot.id,
+      );
+      if (!retriedShot) {
+        throw new Error(`creator_image_retry_result_missing:${shot.id}`);
+      }
+
+      await finalizeTaskAttempt(deps.db, {
+        taskId: task.taskId,
+        attemptId: task.attemptId,
+        status: success ? "succeeded" : "failed",
+        failureCode: success ? null : "generation_failed",
+        now: input.now,
+        finalize: async () => {
+          if (success) {
+            await upsertAssetVersionSnapshot(deps.db, {
+              asset: success.asset,
+              version: success.version,
+              now: input.now,
+            });
+          }
+          await upsertShotsForProject(deps.db, {
+            organizationId: actor.organizationId,
+            projectId,
+            createdByUserId: actor.actorId,
+            shots: [retriedShot],
+            now: input.now,
+          });
+          await updateProjectPhase(deps.db, projectId, "shot_generation");
+        },
+      });
+      await aggregateWorkflowStatus(deps.db, platform.workflowId);
+
+      return {
+        status: 200,
+        body: {
+          shot: retriedShot,
+          asset: success?.asset,
+          version: success?.version,
+          platform,
+        },
+      };
+    },
+
     async generateVideos(input: {
       user: AuthenticatedCreatorUser;
       now: Date;
@@ -749,6 +910,168 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         status: 200,
         body: {
           ...generated,
+          platform,
+        },
+      };
+    },
+
+    async retryShotVideo(input: {
+      user: AuthenticatedCreatorUser;
+      body: { shotId: string };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = sqlState.projectId;
+      if (!projectId) {
+        return {
+          status: 409,
+          body: { error: "creator_project_missing" },
+        };
+      }
+
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const shot = await findProjectShot(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        shotId: input.body.shotId,
+      });
+      if (!shot) {
+        return {
+          status: 404,
+          body: { error: "shot_not_found" },
+        };
+      }
+      if (!shot.currentImageAssetVersionId) {
+        return {
+          status: 409,
+          body: { error: "current_image_required" },
+        };
+      }
+      const retryableVideoStatus = shot.videoStatus;
+      if (retryableVideoStatus !== "failed" && retryableVideoStatus !== "stale") {
+        return {
+          status: 409,
+          body: { error: "shot_video_retry_unavailable" },
+        };
+      }
+
+      const taskId = randomUUID();
+      const claimedShot = await claimShotVideoRetryForTask(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        shotId: shot.id,
+        taskId,
+        now: input.now,
+      });
+      if (!claimedShot) {
+        return {
+          status: 409,
+          body: { error: "shot_video_retry_unavailable" },
+        };
+      }
+
+      let platform: Awaited<ReturnType<typeof requestCreatorVideoGenerationPlatformBatch>>;
+      try {
+        platform = await requestCreatorVideoGenerationPlatformBatch(deps.db, {
+          sessionToken: input.user.sessionToken,
+          projectId,
+          now: input.now,
+          shots: [claimedShot],
+        }, {
+          deferFinalization: true,
+          taskIdsByShotId: { [claimedShot.id]: taskId },
+        });
+      } catch (error) {
+        await releaseVideoRetryClaimIfSafe(deps.db, {
+          organizationId: actor.organizationId,
+          projectId,
+          shotId: shot.id,
+          taskId,
+          previousStatus: retryableVideoStatus,
+          now: input.now,
+        });
+        throw error;
+      }
+      const task = platform.tasks[0];
+      if (!task) {
+        await releaseVideoRetryClaimIfSafe(deps.db, {
+          organizationId: actor.organizationId,
+          projectId,
+          shotId: shot.id,
+          taskId,
+          previousStatus: retryableVideoStatus,
+          now: input.now,
+        });
+        return {
+          status: 409,
+          body: { error: "shot_video_retry_unavailable" },
+        };
+      }
+
+      const generated = await creatorApp.generateVideosForTasks([
+        {
+          shotId: shot.id,
+          taskId: task.taskId,
+          storageObjectKey: task.storageObjectKey,
+          sourceAttemptId: task.attemptId,
+        },
+      ]);
+      const result = (
+        generated.results as Array<{
+          status: "completed" | "failed" | "stale";
+          shot: ShotRecord;
+          asset?: Parameters<typeof upsertAssetVersionSnapshot>[1]["asset"];
+          version?: Parameters<typeof upsertAssetVersionSnapshot>[1]["version"];
+        }>
+      ).find(
+        (candidate) =>
+          candidate.version?.sourceTaskId === task.taskId ||
+          candidate.shot.activeVideoTaskId === task.taskId,
+      );
+      const retriedShot = (generated.shots as ShotRecord[]).find(
+        (candidate) => candidate.id === shot.id,
+      );
+      if (!result || !retriedShot) {
+        throw new Error(`creator_video_retry_result_missing:${task.taskId}`);
+      }
+
+      await finalizeTaskAttempt(deps.db, {
+        taskId: task.taskId,
+        attemptId: task.attemptId,
+        status: result.asset && result.version ? "succeeded" : "failed",
+        failureCode: result.asset && result.version ? null : "generation_failed",
+        now: input.now,
+        finalize: async () => {
+          if (result.asset && result.version) {
+            await upsertAssetVersionSnapshot(deps.db, {
+              asset: result.asset,
+              version: result.version,
+              now: input.now,
+            });
+          }
+          await upsertShotsForProject(deps.db, {
+            organizationId: actor.organizationId,
+            projectId,
+            createdByUserId: actor.actorId,
+            shots: [retriedShot],
+            now: input.now,
+          });
+          await updateProjectPhase(deps.db, projectId, "shot_generation");
+        },
+      });
+      await aggregateWorkflowStatus(deps.db, platform.workflowId);
+
+      return {
+        status: 200,
+        body: {
+          shot: retriedShot,
+          asset: result.asset,
+          version: result.version,
           platform,
         },
       };
@@ -858,6 +1181,48 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
   };
 }
 
+async function releaseImageRetryClaimIfSafe(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    previousStatus: Extract<ShotRecord["imageStatus"], "failed" | "stale">;
+    now: Date;
+  },
+) {
+  const externalStarted = await hasExternalProviderSubmissionStartedForTask(db, {
+    taskId: input.taskId,
+  });
+  if (externalStarted) {
+    return;
+  }
+
+  await releaseShotImageRetryClaim(db, input);
+}
+
+async function releaseVideoRetryClaimIfSafe(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    previousStatus: Extract<ShotRecord["videoStatus"], "failed" | "stale">;
+    now: Date;
+  },
+) {
+  const externalStarted = await hasExternalProviderSubmissionStartedForTask(db, {
+    taskId: input.taskId,
+  });
+  if (externalStarted) {
+    return;
+  }
+
+  await releaseShotVideoRetryClaim(db, input);
+}
+
 async function appendCalibrationAuditEvent(
   db: SqlDatabase,
   input: {
@@ -934,6 +1299,21 @@ function calibrationErrorResponse(
   }
 
   throw error;
+}
+
+async function findProjectShot(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+  },
+): Promise<ShotRecord | undefined> {
+  const shots = await listShotsForProject(db, {
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
+  return shots.find((shot) => shot.id === input.shotId);
 }
 
 async function hydrateStateFromSql(

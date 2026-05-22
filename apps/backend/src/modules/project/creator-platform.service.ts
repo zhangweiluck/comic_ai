@@ -60,6 +60,7 @@ export async function requestCreatorImageGenerationPlatformBatch(
   options: {
     runtime?: CreatorPlatformRuntime;
     deferFinalization?: boolean;
+    taskIdsByShotId?: Record<string, string>;
   } = {},
 ): Promise<{
   workflowId: string;
@@ -90,6 +91,7 @@ export async function requestCreatorImageGenerationPlatformBatch(
     },
     createdByUserId: actor.actorId,
     tasks: input.shots.map((shot) => ({
+      id: options.taskIdsByShotId?.[shot.id],
       taskType: "generate_shot_image",
       queueName: "shot-generation",
       targetEntityType: "shot",
@@ -196,6 +198,7 @@ export async function requestCreatorVideoGenerationPlatformBatch(
   options: {
     runtime?: CreatorPlatformRuntime;
     deferFinalization?: boolean;
+    taskIdsByShotId?: Record<string, string>;
   } = {},
 ): Promise<{
   workflowId: string;
@@ -227,6 +230,7 @@ export async function requestCreatorVideoGenerationPlatformBatch(
     },
     createdByUserId: actor.actorId,
     tasks: readyShots.map((shot) => ({
+      id: options.taskIdsByShotId?.[shot.id],
       taskType: "generate_shot_video",
       queueName: "shot-generation",
       targetEntityType: "shot",

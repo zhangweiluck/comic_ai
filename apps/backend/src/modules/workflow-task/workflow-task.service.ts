@@ -74,6 +74,7 @@ export async function createWorkflowWithTasks(
     inputSnapshot: Record<string, unknown>;
     createdByUserId?: string | null;
     tasks: Array<{
+      id?: string;
       taskType: string;
       queueName: string;
       targetEntityType: string;
@@ -111,7 +112,7 @@ export async function createWorkflowWithTasks(
 
   const tasks: TaskRecord[] = [];
   for (const taskInput of input.tasks) {
-    const taskId = randomUUID();
+    const taskId = taskInput.id ?? randomUUID();
     const row = await queryOne<TaskRow>(
       db,
       `

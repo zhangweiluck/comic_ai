@@ -13,7 +13,7 @@ export type ConsumeOutboxEventOnceResult<T> =
   | { kind: "applied"; result: T }
   | { kind: "duplicate" };
 
-export async function consumeOutboxEventOnce<T>(
+export async function consumeOutboxEventWithIdempotentEffect<T>(
   inbox: Inbox,
   input: {
     consumerName: string;
@@ -29,6 +29,17 @@ export async function consumeOutboxEventOnce<T>(
   const result = await input.effect();
   await inbox.markConsumed(input);
   return { kind: "applied", result };
+}
+
+export async function consumeOutboxEventOnce<T>(
+  inbox: Inbox,
+  input: {
+    consumerName: string;
+    outboxEventId: string;
+    effect: () => Promise<T>;
+  },
+): Promise<ConsumeOutboxEventOnceResult<T>> {
+  return consumeOutboxEventWithIdempotentEffect(inbox, input);
 }
 
 export class InMemoryInbox implements Inbox {

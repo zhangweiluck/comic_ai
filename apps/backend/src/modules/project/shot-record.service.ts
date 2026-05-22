@@ -105,6 +105,147 @@ export async function listShotsForProject(
   return result.rows.map(shotFromRow);
 }
 
+export async function claimShotImageRetryForTask(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    now: Date;
+  },
+): Promise<ShotRecord | undefined> {
+  const result = await db.query<ShotRow>(
+    `
+      UPDATE shots
+      SET image_status = 'generating',
+          active_image_task_id = $4,
+          active_image_revision = content_revision,
+          updated_at = $5
+      WHERE organization_id = $1
+        AND project_id = $2
+        AND id = $3
+        AND image_status IN ('failed', 'stale')
+      RETURNING *
+    `,
+    [
+      input.organizationId,
+      input.projectId,
+      input.shotId,
+      input.taskId,
+      input.now,
+    ],
+  );
+
+  return result.rows[0] ? shotFromRow(result.rows[0]) : undefined;
+}
+
+export async function claimShotVideoRetryForTask(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    now: Date;
+  },
+): Promise<ShotRecord | undefined> {
+  const result = await db.query<ShotRow>(
+    `
+      UPDATE shots
+      SET video_status = 'generating',
+          active_video_task_id = $4,
+          active_video_image_asset_version_id = current_image_asset_version_id,
+          updated_at = $5
+      WHERE organization_id = $1
+        AND project_id = $2
+        AND id = $3
+        AND video_status IN ('failed', 'stale')
+        AND current_image_asset_version_id IS NOT NULL
+      RETURNING *
+    `,
+    [
+      input.organizationId,
+      input.projectId,
+      input.shotId,
+      input.taskId,
+      input.now,
+    ],
+  );
+
+  return result.rows[0] ? shotFromRow(result.rows[0]) : undefined;
+}
+
+export async function releaseShotImageRetryClaim(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    previousStatus: Extract<ShotRecord["imageStatus"], "failed" | "stale">;
+    now: Date;
+  },
+): Promise<void> {
+  await db.query(
+    `
+      UPDATE shots
+      SET image_status = $5,
+          active_image_task_id = NULL,
+          active_image_revision = NULL,
+          updated_at = $6
+      WHERE organization_id = $1
+        AND project_id = $2
+        AND id = $3
+        AND active_image_task_id = $4
+        AND image_status = 'generating'
+    `,
+    [
+      input.organizationId,
+      input.projectId,
+      input.shotId,
+      input.taskId,
+      input.previousStatus,
+      input.now,
+    ],
+  );
+}
+
+export async function releaseShotVideoRetryClaim(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    shotId: string;
+    taskId: string;
+    previousStatus: Extract<ShotRecord["videoStatus"], "failed" | "stale">;
+    now: Date;
+  },
+): Promise<void> {
+  await db.query(
+    `
+      UPDATE shots
+      SET video_status = $5,
+          active_video_task_id = NULL,
+          active_video_image_asset_version_id = NULL,
+          updated_at = $6
+      WHERE organization_id = $1
+        AND project_id = $2
+        AND id = $3
+        AND active_video_task_id = $4
+        AND video_status = 'generating'
+    `,
+    [
+      input.organizationId,
+      input.projectId,
+      input.shotId,
+      input.taskId,
+      input.previousStatus,
+      input.now,
+    ],
+  );
+}
+
 async function insertOrUpdateShot(
   db: SqlDatabase,
   input: {
