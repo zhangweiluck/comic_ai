@@ -180,6 +180,25 @@ CREATE TABLE asset_versions (
 CREATE INDEX asset_versions_asset_idx
   ON asset_versions (organization_id, asset_id, version_number DESC);
 
+CREATE TABLE episodes (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  project_id uuid NOT NULL REFERENCES projects(id),
+  title text NOT NULL,
+  sequence integer NOT NULL CHECK (sequence >= 1),
+  status text NOT NULL CHECK (status IN ('draft', 'ready', 'archived')),
+  created_by_user_id uuid NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  UNIQUE (organization_id, project_id, sequence),
+  FOREIGN KEY (organization_id, project_id)
+    REFERENCES projects (organization_id, id)
+);
+
+CREATE INDEX episodes_project_idx
+  ON episodes (organization_id, project_id, sequence ASC, created_at ASC);
+
 CREATE TABLE storage_objects (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id),
@@ -208,6 +227,7 @@ CREATE TABLE shots (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id),
   project_id uuid NOT NULL REFERENCES projects(id),
+  episode_id uuid NULL,
   title text NOT NULL,
   sort_order integer NOT NULL DEFAULT 0,
   content_revision integer NOT NULL DEFAULT 1 CHECK (content_revision >= 1),
@@ -225,7 +245,9 @@ CREATE TABLE shots (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
   FOREIGN KEY (organization_id, project_id)
-    REFERENCES projects (organization_id, id)
+    REFERENCES projects (organization_id, id),
+  FOREIGN KEY (organization_id, episode_id)
+    REFERENCES episodes (organization_id, id)
 );
 
 CREATE INDEX shots_project_idx

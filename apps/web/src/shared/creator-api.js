@@ -12,7 +12,7 @@
  */
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetch(resolveApiUrl(url), {
     credentials: "include",
     ...options,
   });
@@ -24,6 +24,20 @@ async function fetchJson(url, options = {}) {
   }
 
   return payload;
+}
+
+function resolveApiUrl(url) {
+  if (typeof window === "undefined") {
+    return url;
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  const origin =
+    window.location.protocol === "file:"
+      ? "http://127.0.0.1:4310"
+      : window.location.origin;
+  return new URL(url, origin).toString();
 }
 
 function postJson(url, body) {
@@ -71,6 +85,14 @@ export const creatorApi = {
     return fetchJson("/api/creator/projects");
   },
 
+  getProjectDetail(projectId) {
+    return fetchJson(`/api/creator/projects/${encodeURIComponent(projectId)}/detail`);
+  },
+
+  selectProject(input) {
+    return postJson("/api/creator/project/select", input);
+  },
+
   updateProject(input) {
     return patchJson("/api/creator/project", input);
   },
@@ -113,6 +135,22 @@ export const creatorApi = {
 
   getAssetVersions(assetId) {
     return fetchJson(`/api/creator/assets/versions/${encodeURIComponent(assetId)}`);
+  },
+
+  getProjectEpisodes(projectId) {
+    return fetchJson(`/api/creator/projects/${encodeURIComponent(projectId)}/episodes`);
+  },
+
+  createEpisode(input) {
+    return postJson("/api/creator/episodes", input);
+  },
+
+  updateEpisode(input) {
+    return patchJson("/api/creator/episodes", input);
+  },
+
+  deleteEpisode(input) {
+    return deleteJson("/api/creator/episodes", input);
   },
 
   createShot(input) {

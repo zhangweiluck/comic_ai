@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { appendAuditEvent, type AuditEventRecord } from "../audit/audit.service.ts";
 import { resolveActorContext } from "../organization/actor-context.service.ts";
@@ -13,7 +13,6 @@ import type { AssetType } from "./asset.service.ts";
 import { computeAssetReviewSummary } from "./asset-review.service.ts";
 import {
   assetReviewStateFromRecords,
-  listAssetReviewCandidatesForProject,
   confirmAllAssetReviewCandidateRecords,
   confirmAssetReviewCandidateRecord,
   listAssetReviewCandidatesForProject,
@@ -32,11 +31,19 @@ import {
   createExportRecord,
   listExportRecordsForProject,
 } from "./export-record.service.ts";
+import {
+  createEpisodeForProject,
+  deleteEpisodeForProject,
+  listEpisodesForProject,
+  replaceEpisodesForProject,
+  updateEpisodeForProject,
+} from "./episode-record.service.ts";
 import { listShotsForProject, replaceShotsForProject, upsertShotsForProject } from "./shot-record.service.ts";
 import {
   createSqlParseScriptCommandHandler,
   createSqlProjectCommandHandler,
 } from "./sql-project.command.ts";
+import type { ProjectBundle } from "./project.service.ts";
 import type { ShotRecord } from "./shot.service.ts";
 
 interface AuthenticatedCreatorUser {
@@ -179,6 +186,10 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         prompt: input.body.prompt ?? null,
         model: input.body.model ?? null,
         label: name,
+        previewUrl:
+          input.body.storageObjectKey?.trim().startsWith("data:")
+            ? input.body.storageObjectKey.trim()
+            : null,
       },
       sourceTaskId: randomUUID(),
       sourceAttemptId: randomUUID(),
@@ -290,6 +301,75 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
       };
     },
 
+    async selectProject(input: {
+      user: AuthenticatedCreatorUser;
+      projectId: string;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { creatorApp, sqlState } = getCreatorState(input.user.id);
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId: input.projectId,
+        now: input.now,
+      });
+      const bundle = await loadProjectBundleFromSql(deps.db, {
+        projectId: input.projectId,
+        scriptId: null,
+      });
+      if (!bundle || bundle.project?.workspaceId !== actor.workspaceId) {
+        return { status: 404, body: { error: "project_not_found" } };
+      }
+
+      sqlState.projectId = input.projectId;
+      sqlState.scriptId = bundle.script?.id ?? null;
+      await creatorApp.createProject({
+        name: bundle.project?.name ?? "未命名项目",
+        scriptInput: bundle.script?.inputText ?? "",
+        aspectRatio: bundle.project?.aspectRatio ?? "9:16",
+        resolution: bundle.project?.resolution ?? "1080p",
+        seedBundle: bundle as ProjectBundle,
+      });
+      await creatorApp.seedShotRecords(
+        await listShotsForProject(deps.db, {
+          organizationId: actor.organizationId,
+          projectId: input.projectId,
+        }),
+      );
+
+      return {
+        status: 200,
+        body: await buildProjectDetail(deps.db, {
+          organizationId: actor.organizationId,
+          projectId: input.projectId,
+          now: input.now,
+        }),
+      };
+    },
+
+    async getProjectDetail(input: {
+      user: AuthenticatedCreatorUser;
+      projectId: string;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId: input.projectId,
+        now: input.now,
+      });
+      const detail = await buildProjectDetail(deps.db, {
+        organizationId: actor.organizationId,
+        projectId: input.projectId,
+        now: input.now,
+      });
+      if (!detail.project) {
+        return { status: 404, body: { error: "project_not_found" } };
+      }
+      return {
+        status: 200,
+        body: detail,
+      };
+    },
+
     async updateProject(input: {
       user: AuthenticatedCreatorUser;
       body: {
@@ -386,7 +466,10 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
         return result as CreatorHttpResponse<Record<string, unknown>>;
       }
 
-      const parsed = await creatorApp.parseScript();
+      const parsed = await creatorApp.parseScript({
+        episodeIdForSourceId: (sourceEpisodeId) =>
+          stableEpisodeUuid(sqlState.projectId!, sourceEpisodeId),
+      });
       const actor = await resolveActorContext(deps.db, {
         sessionToken: input.user.sessionToken,
         projectId: sqlState.projectId,
@@ -418,11 +501,38 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
               required: candidate.kind !== "prop",
             })),
           });
+          await replaceEpisodesForProject(deps.db, {
+            organizationId: actor.organizationId,
+            projectId: sqlState.projectId!,
+            createdByUserId: actor.actorId,
+            now: input.now,
+            episodes: parsed.parse.episodes.map((episode) => ({
+              id: stableEpisodeUuid(sqlState.projectId!, episode.id),
+              title: episode.title,
+              sequence: episode.sequence,
+              status: "draft",
+            })),
+          });
+          const episodeIdBySourceId = new Map(
+            parsed.parse.episodes.map((episode) => [
+              episode.id,
+              stableEpisodeUuid(sqlState.projectId!, episode.id),
+            ]),
+          );
+          const shotEpisodeIdByIndex = new Map(
+            parsed.parse.shots.map((shot, index) => [
+              index,
+              episodeIdBySourceId.get(shot.episodeId) ?? null,
+            ]),
+          );
           await replaceShotsForProject(deps.db, {
             organizationId: actor.organizationId,
             projectId: sqlState.projectId!,
             createdByUserId: actor.actorId,
-            shots: parsed.shots as ShotRecord[],
+            shots: (parsed.shots as ShotRecord[]).map((shot, index) => ({
+              ...shot,
+              episodeId: shotEpisodeIdByIndex.get(index) ?? null,
+            })),
             now: input.now,
           });
           await deps.db.query(
@@ -668,9 +778,116 @@ export function createCreatorApplication(deps: CreatorApplicationDeps) {
       return { status: 200, body: { versions } };
     },
 
+    async listProjectEpisodes(input: {
+      user: AuthenticatedCreatorUser;
+      projectId: string;
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId: input.projectId,
+        now: input.now,
+      });
+      const detail = await buildProjectDetail(deps.db, {
+        organizationId: actor.organizationId,
+        projectId: input.projectId,
+        now: input.now,
+      });
+      return { status: 200, body: { episodes: detail.episodes } };
+    },
+
+    async createEpisode(input: {
+      user: AuthenticatedCreatorUser;
+      body: { projectId?: string | null; title?: string | null };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = input.body.projectId ?? sqlState.projectId;
+      if (!projectId) {
+        return { status: 409, body: { error: "creator_project_missing" } };
+      }
+      const title = input.body.title?.trim();
+      if (!title) {
+        return { status: 400, body: { error: "invalid_episode_input", fieldErrors: { title: "title_required" } } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const episode = await createEpisodeForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        title,
+        createdByUserId: actor.actorId,
+        now: input.now,
+      });
+      return { status: 200, body: { episode } };
+    },
+
+    async updateEpisode(input: {
+      user: AuthenticatedCreatorUser;
+      body: {
+        projectId?: string | null;
+        episodeId?: string | null;
+        title?: string | null;
+        status?: "draft" | "ready" | "archived" | null;
+      };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = input.body.projectId ?? sqlState.projectId;
+      if (!projectId || !input.body.episodeId) {
+        return { status: 400, body: { error: "invalid_episode_input" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const episode = await updateEpisodeForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        episodeId: input.body.episodeId,
+        title: input.body.title,
+        status: input.body.status,
+        now: input.now,
+      });
+      if (!episode) {
+        return { status: 404, body: { error: "episode_not_found" } };
+      }
+      return { status: 200, body: { episode } };
+    },
+
+    async deleteEpisode(input: {
+      user: AuthenticatedCreatorUser;
+      body: { projectId?: string | null; episodeId?: string | null };
+      now: Date;
+    }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
+      const { sqlState } = getCreatorState(input.user.id);
+      await ensureSqlState(input.user.id, sqlState);
+      const projectId = input.body.projectId ?? sqlState.projectId;
+      if (!projectId || !input.body.episodeId) {
+        return { status: 400, body: { error: "invalid_episode_input" } };
+      }
+      const actor = await resolveActorContext(deps.db, {
+        sessionToken: input.user.sessionToken,
+        projectId,
+        now: input.now,
+      });
+      const deleted = await deleteEpisodeForProject(deps.db, {
+        organizationId: actor.organizationId,
+        projectId,
+        episodeId: input.body.episodeId,
+      });
+      return { status: deleted ? 200 : 404, body: deleted ? { deleted: true } : { error: "episode_not_found" } };
+    },
+
     async createShot(input: {
       user: AuthenticatedCreatorUser;
-      body: { title?: string | null };
+      body: { title?: string | null; episodeId?: string | null };
       now: Date;
     }): Promise<CreatorHttpResponse<Record<string, unknown>>> {
       const { creatorApp, sqlState } = getCreatorState(input.user.id);
@@ -1495,6 +1712,10 @@ async function deleteProjectRecord(
     input.organizationId,
     input.projectId,
   ]);
+  await db.query("DELETE FROM episodes WHERE organization_id = $1 AND project_id = $2", [
+    input.organizationId,
+    input.projectId,
+  ]);
   await db.query("DELETE FROM scripts WHERE organization_id = $1 AND project_id = $2", [
     input.organizationId,
     input.projectId,
@@ -1507,6 +1728,101 @@ async function deleteProjectRecord(
     input.organizationId,
     input.projectId,
   ]);
+}
+
+async function buildProjectDetail(
+  db: SqlDatabase,
+  input: {
+    organizationId: string;
+    projectId: string;
+    now: Date;
+  },
+) {
+  const projectBundle = await loadProjectBundleFromSql(db, {
+    projectId: input.projectId,
+    scriptId: null,
+  });
+  if (!projectBundle?.project) {
+    return {
+      project: null,
+      script: null,
+      assetSummary: createEmptyAssetSummary(),
+      assetsByType: createEmptyAssetsByType(),
+      episodes: [],
+      shots: [],
+      exportHistory: [],
+    };
+  }
+
+  const assets = await listAssetsForProject(db, {
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
+  const shots = await listShotsForProject(db, {
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
+  const episodes = await listEpisodesForProject(db, {
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
+  const exportHistory = await listExportRecordsForProject(db, {
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+  });
+
+  const assetsByType = groupAssetsByUiType(assets);
+  const projectEpisodes = episodes.length
+    ? episodes
+    : shots.length
+      ? [
+          {
+            id: "episode-primary",
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            title: "剧一",
+            sequence: 1,
+            status: "draft" as const,
+            createdByUserId: projectBundle.project.createdByUserId,
+            createdAt: projectBundle.project.createdAt,
+            updatedAt: input.now,
+          },
+        ]
+      : [];
+
+  return {
+    project: projectBundle.project,
+    script: projectBundle.script,
+    assetSummary: buildAssetSummary(assetsByType),
+    assetsByType,
+    episodes: projectEpisodes.map((episode) => {
+      const episodeShots = shots.filter((shot) =>
+        episode.id === "episode-primary" ? true : shot.episodeId === episode.id,
+      );
+      return {
+        id: episode.id,
+        title: episode.title,
+        sequence: episode.sequence,
+        status: episode.status,
+        createdAt: episode.createdAt,
+        updatedAt: episode.updatedAt,
+        storyboardCount: episodeShots.length,
+        previewUrl: findEpisodePreviewUrl(episodeShots, assets),
+      };
+    }),
+    shots: shots.map((shot) => ({
+      id: shot.id,
+      episodeId: shot.episodeId,
+      title: shot.title,
+      sortOrder: shot.sortOrder,
+      contentRevision: shot.contentRevision,
+      imageStatus: shot.imageStatus,
+      videoStatus: shot.videoStatus,
+      currentImageAssetVersionId: shot.currentImageAssetVersionId,
+      currentVideoAssetVersionId: shot.currentVideoAssetVersionId,
+    })),
+    exportHistory,
+  };
 }
 
 async function listAssetsForProject(
@@ -1560,16 +1876,103 @@ async function listAssetsForProject(
     label: row.metadata_json?.label ?? row.asset_key,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    previewUrl: getAssetPreviewUrl(row.storage_object_key, row.metadata_json),
     latestVersion: row.version_id
       ? {
           id: row.version_id,
           versionNumber: Number(row.version_number),
           storageObjectKey: row.storage_object_key,
           metadata: row.metadata_json,
+          previewUrl: getAssetPreviewUrl(row.storage_object_key, row.metadata_json),
           createdAt: row.version_created_at ? new Date(row.version_created_at) : null,
         }
       : null,
   }));
+}
+
+type ListedAsset = Awaited<ReturnType<typeof listAssetsForProject>>[number];
+
+function createEmptyAssetsByType() {
+  return {
+    character: [] as ListedAsset[],
+    scene: [] as ListedAsset[],
+    prop: [] as ListedAsset[],
+    other: {
+      image: [] as ListedAsset[],
+      video: [] as ListedAsset[],
+    },
+  };
+}
+
+function createEmptyAssetSummary() {
+  return {
+    character: { count: 0, previews: [] as string[] },
+    scene: { count: 0, previews: [] as string[] },
+    prop: { count: 0, previews: [] as string[] },
+    other: { count: 0, previews: [] as string[] },
+  };
+}
+
+function groupAssetsByUiType(assets: ListedAsset[]) {
+  const grouped = createEmptyAssetsByType();
+  for (const asset of assets) {
+    if (asset.assetType === "character_sheet") {
+      grouped.character.push(asset);
+    } else if (asset.assetType === "scene_reference") {
+      grouped.scene.push(asset);
+    } else if (asset.assetType === "prop_reference") {
+      grouped.prop.push(asset);
+    } else if (asset.assetType === "shot_video") {
+      grouped.other.video.push(asset);
+    } else {
+      grouped.other.image.push(asset);
+    }
+  }
+  return grouped;
+}
+
+function buildAssetSummary(assetsByType: ReturnType<typeof createEmptyAssetsByType>) {
+  return {
+    character: summarizeAssets(assetsByType.character),
+    scene: summarizeAssets(assetsByType.scene),
+    prop: summarizeAssets(assetsByType.prop),
+    other: summarizeAssets([...assetsByType.other.image, ...assetsByType.other.video]),
+  };
+}
+
+function summarizeAssets(assets: ListedAsset[]) {
+  return {
+    count: assets.length,
+    previews: assets.map((asset) => asset.previewUrl).filter(Boolean).slice(0, 3),
+  };
+}
+
+function findEpisodePreviewUrl(shots: ShotRecord[], assets: ListedAsset[]) {
+  const imageVersionIds = new Set(
+    shots.map((shot) => shot.currentImageAssetVersionId).filter(Boolean),
+  );
+  const videoVersionIds = new Set(
+    shots.map((shot) => shot.currentVideoAssetVersionId).filter(Boolean),
+  );
+  return (
+    assets.find((asset) => imageVersionIds.has(asset.latestVersion?.id ?? ""))?.previewUrl ??
+    assets.find((asset) => videoVersionIds.has(asset.latestVersion?.id ?? ""))?.previewUrl ??
+    null
+  );
+}
+
+function getAssetPreviewUrl(
+  storageObjectKey: string | null,
+  metadata: Record<string, unknown> | null,
+) {
+  const previewUrl = metadata?.previewUrl ?? metadata?.sourceUrl;
+  if (typeof previewUrl === "string" && previewUrl.trim()) {
+    return previewUrl;
+  }
+  if (typeof storageObjectKey === "string" && storageObjectKey.startsWith("data:")) {
+    return storageObjectKey;
+  }
+  return null;
 }
 
 async function listAssetVersions(
@@ -1624,6 +2027,20 @@ function assetTypeForKind(kind: "character" | "scene" | "prop" | "image" | "vide
     return "prop_reference";
   }
   return kind === "video" ? "shot_video" : "shot_image";
+}
+
+function stableEpisodeUuid(projectId: string, sourceEpisodeId: string) {
+  const hex = createHash("sha256")
+    .update(`${projectId}:${sourceEpisodeId}`)
+    .digest("hex")
+    .slice(0, 32);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join("-");
 }
 
 function filterRequestedShots(
@@ -1716,6 +2133,7 @@ async function hydrateStateFromSql(
     shots: shots.length > 0
       ? shots.map((shot) => ({
           id: shot.id,
+          episodeId: shot.episodeId,
           title: shot.title,
           contentRevision: shot.contentRevision,
           imageStatus: shot.imageStatus,
@@ -1745,6 +2163,7 @@ async function loadProjectBundleFromSql(
     organization_id: string;
     workspace_id: string;
     name: string;
+    cover_image_url: string | null;
     aspect_ratio: string;
     resolution: string;
     phase: "script_input" | "asset_review" | "shot_generation" | "export";
@@ -1793,6 +2212,7 @@ async function loadProjectBundleFromSql(
       organizationId: project.organization_id,
       workspaceId: project.workspace_id,
       name: project.name,
+      coverImageUrl: project.cover_image_url,
       aspectRatio: project.aspect_ratio,
       resolution: project.resolution,
       phase: project.phase,

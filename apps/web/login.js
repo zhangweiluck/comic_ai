@@ -240,8 +240,19 @@ const debugPanel = document.querySelector("#debug-panel");
 let activeChallengeId = null;
 const appUrl = new URL("./app.html#project", window.location.href).toString();
 
+function resolveApiUrl(url) {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  const origin =
+    window.location.protocol === "file:"
+      ? "http://127.0.0.1:4310"
+      : window.location.origin;
+  return new URL(url, origin).toString();
+}
+
 async function loadSession() {
-  const response = await fetch("/api/auth/session", {
+  const response = await fetch(resolveApiUrl("/api/auth/session"), {
     credentials: "include",
   });
 
@@ -266,7 +277,7 @@ requestCodeButton?.addEventListener("click", async () => {
   const phone = phoneInput?.value?.trim() ?? "";
   setStatus("正在请求验证码...");
 
-  const requestResponse = await fetch("/api/auth/code/request", {
+  const requestResponse = await fetch(resolveApiUrl("/api/auth/code/request"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ phone }),
@@ -283,7 +294,7 @@ requestCodeButton?.addEventListener("click", async () => {
   setStatus(`验证码已发送至 ${requestPayload.maskedPhone}`);
 
   const debugResponse = await fetch(
-    `/api/auth/dev/challenges/${requestPayload.challengeId}`,
+    resolveApiUrl(`/api/auth/dev/challenges/${requestPayload.challengeId}`),
     { credentials: "include" },
   );
 
@@ -306,7 +317,7 @@ form?.addEventListener("submit", async (event) => {
 
   setStatus("正在登录...");
 
-  const verifyResponse = await fetch("/api/auth/code/verify", {
+  const verifyResponse = await fetch(resolveApiUrl("/api/auth/code/verify"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

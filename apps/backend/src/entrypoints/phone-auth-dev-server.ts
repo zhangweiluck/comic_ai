@@ -404,6 +404,61 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           );
         }
 
+        if (
+          request.method === "GET" &&
+          pathname.startsWith("/api/creator/projects/") &&
+          pathname.endsWith("/detail")
+        ) {
+          const projectId = decodeURIComponent(pathname.split("/").at(-2) ?? "");
+          return writeJson(
+            response,
+            await creatorApplication.getProjectDetail({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              projectId,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (
+          request.method === "GET" &&
+          pathname.startsWith("/api/creator/projects/") &&
+          pathname.endsWith("/episodes")
+        ) {
+          const projectId = decodeURIComponent(pathname.split("/").at(-2) ?? "");
+          return writeJson(
+            response,
+            await creatorApplication.listProjectEpisodes({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              projectId,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/project/select") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.selectProject({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              projectId: body.projectId ?? "",
+              now: new Date(),
+            }),
+          );
+        }
+
         if (request.method === "POST" && pathname === "/api/creator/project/create") {
           const body = (await readJsonBody(request)) as {
             name: string;
@@ -519,6 +574,62 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
           return writeJson(
             response,
             await creatorApplication.importAsset({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "POST" && pathname === "/api/creator/episodes") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+            title?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.createEpisode({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "PATCH" && pathname === "/api/creator/episodes") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+            episodeId?: string | null;
+            title?: string | null;
+            status?: "draft" | "ready" | "archived" | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.updateEpisode({
+              user: {
+                id: authenticated.user.id,
+                sessionToken: authenticated.sessionToken,
+              },
+              body,
+              now: new Date(),
+            }),
+          );
+        }
+
+        if (request.method === "DELETE" && pathname === "/api/creator/episodes") {
+          const body = (await readJsonBody(request)) as {
+            projectId?: string | null;
+            episodeId?: string | null;
+          };
+          return writeJson(
+            response,
+            await creatorApplication.deleteEpisode({
               user: {
                 id: authenticated.user.id,
                 sessionToken: authenticated.sessionToken,
@@ -663,6 +774,7 @@ export function createPhoneAuthDevServer(): PhoneAuthDevServer {
         if (request.method === "POST" && pathname === "/api/creator/shots") {
           const body = (await readJsonBody(request)) as {
             title?: string | null;
+            episodeId?: string | null;
           };
           return writeJson(
             response,

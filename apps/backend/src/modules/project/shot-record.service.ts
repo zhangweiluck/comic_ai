@@ -7,6 +7,7 @@ interface ShotRow {
   id: string;
   organization_id: string;
   project_id: string;
+  episode_id: string | null;
   title: string;
   sort_order: number | string;
   content_revision: number;
@@ -122,6 +123,7 @@ async function insertOrUpdateShot(
         id,
         organization_id,
         project_id,
+        episode_id,
         title,
         sort_order,
         content_revision,
@@ -140,10 +142,11 @@ async function insertOrUpdateShot(
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9,
-        $10, $11, $12, $13, $14, $15, $16, $17, $17
+        $10, $11, $12, $13, $14, $15, $16, $17, $18, $18
       )
       ON CONFLICT (id) DO UPDATE
       SET title = EXCLUDED.title,
+          episode_id = EXCLUDED.episode_id,
           sort_order = EXCLUDED.sort_order,
           content_revision = EXCLUDED.content_revision,
           content_status = EXCLUDED.content_status,
@@ -161,6 +164,7 @@ async function insertOrUpdateShot(
       input.shot.id,
       input.organizationId,
       input.projectId,
+      input.shot.episodeId,
       input.shot.title,
       (input.shot as ShotRecord & { sortOrder?: number }).sortOrder ?? 0,
       input.shot.contentRevision,
@@ -184,6 +188,7 @@ function shotFromRow(row: ShotRow): ShotRecord {
     id: row.id,
     organizationId: row.organization_id,
     projectId: row.project_id,
+    episodeId: row.episode_id,
     title: row.title,
     sortOrder: Number(row.sort_order),
     contentRevision: row.content_revision,

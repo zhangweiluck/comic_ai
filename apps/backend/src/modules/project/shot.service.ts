@@ -4,6 +4,7 @@ export interface ShotRecord {
   id: string;
   organizationId: string;
   projectId: string;
+  episodeId: string | null;
   title: string;
   sortOrder: number;
   contentRevision: number;
@@ -29,6 +30,7 @@ export class InMemoryShotStore {
   async createShot(input: {
     organizationId: string;
     projectId: string;
+    episodeId?: string | null;
     title: string;
     createdByUserId: string;
   }): Promise<ShotRecord> {
@@ -37,6 +39,7 @@ export class InMemoryShotStore {
       id: randomUUID(),
       organizationId: input.organizationId,
       projectId: input.projectId,
+      episodeId: input.episodeId ?? null,
       title: input.title,
       sortOrder: 0,
       contentRevision: 1,
@@ -83,6 +86,7 @@ export async function createShotDraft(
   input: {
     organizationId: string;
     projectId: string;
+    episodeId?: string | null;
     title: string;
     createdByUserId: string;
   },

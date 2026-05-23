@@ -431,7 +431,7 @@ describe("phone auth dev server", () => {
         body: JSON.stringify({
           kind: "scene",
           name: "Imported Alley",
-          storageObjectKey: "uploads/imported-alley.png",
+          storageObjectKey: "data:image/png;base64,imported-alley",
           mimeType: "image/png",
           width: 1280,
           height: 720,
@@ -456,6 +456,73 @@ describe("phone auth dev server", () => {
         method: "POST",
         headers: { cookie },
       });
+
+      const detailResponse = await fetch(
+        `${server.origin}/api/creator/projects/${created.project.id}/detail`,
+        {
+          headers: { cookie },
+        },
+      );
+      const detail = await detailResponse.json();
+
+      const episodesResponse = await fetch(
+        `${server.origin}/api/creator/projects/${created.project.id}/episodes`,
+        {
+          headers: { cookie },
+        },
+      );
+      const episodes = await episodesResponse.json();
+
+      const selectResponse = await fetch(`${server.origin}/api/creator/project/select`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({ projectId: created.project.id }),
+      });
+      const selected = await selectResponse.json();
+
+      const createEpisodeResponse = await fetch(`${server.origin}/api/creator/episodes`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          projectId: created.project.id,
+          title: "Manual Episode",
+        }),
+      });
+      const createdEpisode = await createEpisodeResponse.json();
+
+      const updateEpisodeResponse = await fetch(`${server.origin}/api/creator/episodes`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          projectId: created.project.id,
+          episodeId: createdEpisode.episode.id,
+          title: "Manual Episode Updated",
+          status: "ready",
+        }),
+      });
+      const updatedEpisode = await updateEpisodeResponse.json();
+
+      const deleteEpisodeResponse = await fetch(`${server.origin}/api/creator/episodes`, {
+        method: "DELETE",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          projectId: created.project.id,
+          episodeId: createdEpisode.episode.id,
+        }),
+      });
+      const deletedEpisode = await deleteEpisodeResponse.json();
 
       const createShotResponse = await fetch(`${server.origin}/api/creator/shots`, {
         method: "POST",
@@ -555,13 +622,44 @@ describe("phone auth dev server", () => {
       assert.equal(importedAsset.asset.assetType, "scene_reference");
       assert.equal(libraryResponse.status, 200);
       assert.equal(library.assets.length, 2);
+      assert.equal(
+        library.assets.find((asset: { assetType: string }) => asset.assetType === "scene_reference")
+          ?.previewUrl,
+        "data:image/png;base64,imported-alley",
+      );
       assert.equal(versionsResponse.status, 200);
       assert.equal(versions.versions.length, 1);
+      assert.equal(detailResponse.status, 200);
+      assert.equal(detail.project.id, created.project.id);
+      assert.equal(detail.assetSummary.character.count, 1);
+      assert.equal(detail.assetSummary.scene.count, 1);
+      assert.deepEqual(detail.assetSummary.scene.previews, [
+        "data:image/png;base64,imported-alley",
+      ]);
+      assert.equal(detail.episodes.length, 1);
+      assert.equal(detail.episodes[0].storyboardCount, 3);
+      assert.equal(
+        detail.shots.every(
+          (shot: { episodeId: string | null }) => shot.episodeId === detail.episodes[0].id,
+        ),
+        true,
+      );
+      assert.equal(episodesResponse.status, 200);
+      assert.equal(episodes.episodes.length, 1);
+      assert.equal(selectResponse.status, 200);
+      assert.equal(selected.project.id, created.project.id);
+      assert.equal(createEpisodeResponse.status, 200);
+      assert.equal(createdEpisode.episode.sequence, 2);
+      assert.equal(updateEpisodeResponse.status, 200);
+      assert.equal(updatedEpisode.episode.title, "Manual Episode Updated");
+      assert.equal(updatedEpisode.episode.status, "ready");
+      assert.equal(deleteEpisodeResponse.status, 200);
+      assert.equal(deletedEpisode.deleted, true);
       assert.equal(createShotResponse.status, 200);
       assert.equal(createdShot.shot.title, "Inserted manual shot");
       assert.equal(updateShotResponse.status, 200);
       assert.equal(updatedShot.shot.title, "Updated manual shot");
-      assert.equal(reorderResponse.status, 200);
+      assert.equal(reorderResponse.status, 200, JSON.stringify(reordered));
       assert.deepEqual(
         reordered.shots.map((shot: { id: string }) => shot.id),
         reorderedIds,

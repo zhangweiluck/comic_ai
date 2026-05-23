@@ -35,6 +35,7 @@ import {
 
 interface CreatorShotView {
   id: string;
+  episodeId: string | null;
   title: string;
   contentRevision: number;
   imageStatus: string;
@@ -104,7 +105,15 @@ export class CreatorDevApp {
     return created;
   }
 
-  async parseScript() {
+  async seedShotRecords(shots: ShotRecord[]) {
+    this.shotIds = [];
+    for (const shot of [...shots].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const saved = await this.shotStore.saveShot(shot);
+      this.shotIds.push(saved.id);
+    }
+  }
+
+  async parseScript(input?: { episodeIdForSourceId?: (sourceEpisodeId: string) => string }) {
     const bundle = this.requireBundle();
     const parsed = createDeterministicMockParseResult(bundle.script.inputText);
 
@@ -113,6 +122,7 @@ export class CreatorDevApp {
       const created = await createShotDraft(this.shotStore, {
         organizationId: bundle.project.organizationId,
         projectId: bundle.project.id,
+        episodeId: input?.episodeIdForSourceId?.(shot.episodeId) ?? shot.episodeId,
         title: `Shot ${String(shot.sequence).padStart(3, "0")}`,
         createdByUserId: bundle.project.createdByUserId,
       });
@@ -207,11 +217,12 @@ export class CreatorDevApp {
     };
   }
 
-  async createShot(input: { title?: string | null }) {
+  async createShot(input: { title?: string | null; episodeId?: string | null }) {
     const bundle = this.requireBundle();
     const created = await createShotDraft(this.shotStore, {
       organizationId: bundle.project.organizationId,
       projectId: bundle.project.id,
+      episodeId: input.episodeId ?? null,
       title: input.title?.trim() || `Shot ${String(this.shotIds.length + 1).padStart(3, "0")}`,
       createdByUserId: bundle.project.createdByUserId,
     });
@@ -459,6 +470,7 @@ export class CreatorDevApp {
     const shotRecords = await this.listShotRecords();
     return shotRecords.map((shot) => ({
       id: shot.id,
+      episodeId: shot.episodeId,
       title: shot.title,
       contentRevision: shot.contentRevision,
       imageStatus: shot.imageStatus,

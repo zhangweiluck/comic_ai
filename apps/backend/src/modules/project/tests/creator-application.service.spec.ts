@@ -113,6 +113,92 @@ describe("creator application service", { concurrency: false }, () => {
     }
   });
 
+  it("returns project detail with asset summaries, preview urls, episodes, and shot links", async () => {
+    const db = await createMigratedTestDb();
+
+    try {
+      await seedTenant(db);
+      const session = await seedSession(db, userId, "creator-application-detail-session");
+      const creator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const user = {
+        id: userId,
+        sessionToken: session.token,
+      };
+
+      const created = await creator.createProject({
+        user,
+        body: {
+          name: "Creator project detail",
+          scriptInput: "Episode 7: Project detail should hydrate tabs.",
+          aspectRatio: "9:16",
+          resolution: "1080p",
+        },
+        idempotencyKey: "creator-application-detail-create",
+        now: new Date("2026-05-18T10:10:00.000Z"),
+      });
+      await creator.parseScript({
+        user,
+        idempotencyKey: "creator-application-detail-parse",
+        now: new Date("2026-05-18T10:11:00.000Z"),
+      });
+      await creator.importAsset({
+        user,
+        body: {
+          kind: "scene",
+          name: "Detail Scene",
+          storageObjectKey: "data:image/png;base64,detail-scene",
+          mimeType: "image/png",
+          width: 1280,
+          height: 720,
+        },
+        now: new Date("2026-05-18T10:12:00.000Z"),
+      });
+
+      const projectId = (created.body as { project: { id: string } }).project.id;
+      const detail = await creator.getProjectDetail({
+        user,
+        projectId,
+        now: new Date("2026-05-18T10:13:00.000Z"),
+      });
+      const reloadedCreator = createCreatorApplication({
+        db,
+        workspaceId,
+      });
+      const selected = await reloadedCreator.selectProject({
+        user,
+        projectId,
+        now: new Date("2026-05-18T10:14:00.000Z"),
+      });
+
+      assert.equal(detail.status, 200);
+      assert.equal((detail.body as any).project.id, projectId);
+      assert.equal((detail.body as any).assetSummary.scene.count, 1);
+      assert.deepEqual((detail.body as any).assetSummary.scene.previews, [
+        "data:image/png;base64,detail-scene",
+      ]);
+      assert.equal((detail.body as any).assetsByType.scene[0].previewUrl, "data:image/png;base64,detail-scene");
+      assert.equal((detail.body as any).assetsByType.scene[0].latestVersion.previewUrl, "data:image/png;base64,detail-scene");
+      assert.equal((detail.body as any).episodes.length, 1);
+      assert.equal((detail.body as any).episodes[0].storyboardCount, 3);
+      assert.match((detail.body as any).episodes[0].id, /^[0-9a-f-]{36}$/);
+      assert.equal(
+        (detail.body as any).shots.every(
+          (shot: { episodeId: string | null }) =>
+            shot.episodeId === (detail.body as any).episodes[0].id,
+        ),
+        true,
+      );
+      assert.equal(selected.status, 200);
+      assert.equal((selected.body as any).project.id, projectId);
+      assert.equal((selected.body as any).episodes.length, 1);
+    } finally {
+      await db.close();
+    }
+  });
+
   it("supports single-asset confirmation and label editing through the formal application layer", async () => {
     const db = await createMigratedTestDb();
 
