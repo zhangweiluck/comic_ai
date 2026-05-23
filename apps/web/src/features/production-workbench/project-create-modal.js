@@ -40,6 +40,7 @@ export function renderProjectCreateModal({
           <h2>新建项目</h2>
           <button class="modal-close" type="button" data-action="close-create-modal" aria-label="关闭">×</button>
         </div>
+        ${notice ? `<p class="create-modal-toast" role="status">${escapeHtml(notice)}</p>` : ""}
 
         <div class="create-modal-body">
           <label class="control-field project-name-field">
@@ -72,7 +73,7 @@ export function renderProjectCreateModal({
         </div>
 
         <div class="create-modal-actions">
-          <p class="modal-inline-status">${escapeHtml(notice)}</p>
+          <p class="modal-inline-status"></p>
           <button id="create-project-button" class="primary-action create-confirm-button" type="button" data-action="create-project" ${disabled(busy)}>
             确认
           </button>
