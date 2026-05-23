@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node scripts/run-tests.mjs",
-    "dev:phone-auth": "node scripts/run-phone-auth-dev-server.mjs"
+    "dev:phone-auth": "node --import tsx scripts/run-phone-auth-dev-server.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.5",

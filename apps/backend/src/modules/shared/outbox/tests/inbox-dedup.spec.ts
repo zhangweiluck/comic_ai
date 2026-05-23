@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   InMemoryInbox,
-  consumeOutboxEventOnce,
+  consumeOutboxEventWithIdempotentEffect,
 } from "../outbox-repair.contract.ts";
 
 describe("outbox inbox dedup", () => {
@@ -11,7 +11,7 @@ describe("outbox inbox dedup", () => {
     const inbox = new InMemoryInbox();
     let sideEffectCount = 0;
 
-    const first = await consumeOutboxEventOnce(inbox, {
+    const first = await consumeOutboxEventWithIdempotentEffect(inbox, {
       consumerName: "credit-billing",
       outboxEventId: "event_1",
       effect: async () => {
@@ -19,7 +19,7 @@ describe("outbox inbox dedup", () => {
         return "applied";
       },
     });
-    const replay = await consumeOutboxEventOnce(inbox, {
+    const replay = await consumeOutboxEventWithIdempotentEffect(inbox, {
       consumerName: "credit-billing",
       outboxEventId: "event_1",
       effect: async () => {
@@ -31,5 +31,29 @@ describe("outbox inbox dedup", () => {
     assert.equal(first.kind, "applied");
     assert.equal(replay.kind, "duplicate");
     assert.equal(sideEffectCount, 1);
+  });
+
+  it("does not serialize concurrent effects before the inbox mark is written", async () => {
+    const inbox = new InMemoryInbox();
+    let entered = 0;
+
+    const consume = () =>
+      consumeOutboxEventWithIdempotentEffect(inbox, {
+        consumerName: "credit-billing",
+        outboxEventId: "event_2",
+        effect: async () => {
+          entered += 1;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return "applied";
+        },
+      });
+
+    const results = await Promise.all([consume(), consume()]);
+
+    assert.equal(entered, 2);
+    assert.deepEqual(
+      results.map((result) => result.kind),
+      ["applied", "applied"],
+    );
   });
 });

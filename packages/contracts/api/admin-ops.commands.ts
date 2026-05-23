@@ -40,7 +40,64 @@ export const adminRetryTaskCommand: ApiCommandContract = {
   verificationIds: ["R-020"],
 };
 
+export const markPaymentRiskReviewedCommand: ApiCommandContract = {
+  name: "MarkPaymentRiskReviewed",
+  operationName: operationNames.opsMarkPaymentRiskReviewed,
+  capability: capabilities.opsSettle,
+  idempotencyRequired: true,
+  requestSchema: {
+    riskEventId: "uuid",
+    reason: "required text",
+  },
+  responseSchema: { riskEventId: "uuid", status: "reviewed" },
+  resourceScope: "payment_risk_event:{risk_event_id}",
+  statePreconditions: [
+    "payment_risk_event.status = open",
+    "actor has ops settlement capability",
+  ],
+  businessErrors: [
+    "payment_risk_not_found",
+    "payment_risk_not_reviewable",
+    "reason_required",
+    "ops_forbidden",
+  ],
+  auditEvent: "ops.payment_risk_reviewed",
+  verificationIds: ["PAY-risk-review", "C10-payment-risk-ops"],
+};
+
+export const repairPaidWithoutCreditCommand: ApiCommandContract = {
+  name: "RepairPaidWithoutCredit",
+  operationName: operationNames.opsRepairPaidWithoutCredit,
+  capability: capabilities.opsSettle,
+  idempotencyRequired: true,
+  requestSchema: {
+    orderId: "uuid",
+    reason: "required text",
+  },
+  responseSchema: {
+    orderId: "uuid",
+    issueStatus: "resolved",
+    creditGrantLedgerEntryId: "uuid",
+  },
+  resourceScope: "order:{order_id}",
+  statePreconditions: [
+    "order.status = paid",
+    "order.credit_grant_ledger_entry_id is null",
+    "actor has ops settlement capability",
+  ],
+  businessErrors: [
+    "payment_issue_not_found",
+    "payment_issue_not_repairable",
+    "reason_required",
+    "ops_forbidden",
+  ],
+  auditEvent: "ops.payment_paid_without_credit_repaired",
+  verificationIds: ["PAY-paid-without-credit-repair", "C10-payment-ops"],
+};
+
 export const adminOpsCommandContracts = [
   manualSettleUnknownTaskCommand,
   adminRetryTaskCommand,
+  markPaymentRiskReviewedCommand,
+  repairPaidWithoutCreditCommand,
 ];

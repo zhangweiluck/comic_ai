@@ -96,9 +96,9 @@ function findNodeRuntime(minMajor) {
 
   addCandidate(process.execPath);
 
-  const whereNode = spawnSync("where", ["node"], {
+  const nodeLocator = process.platform === "win32" ? "where.exe" : "which";
+  const whereNode = spawnSync(nodeLocator, ["node"], {
     encoding: "utf8",
-    shell: process.platform === "win32",
   });
 
   if (whereNode.status === 0) {

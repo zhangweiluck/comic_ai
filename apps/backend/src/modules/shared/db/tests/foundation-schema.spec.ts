@@ -27,6 +27,13 @@ describe("foundation schema", () => {
         "credit_reservations",
         "credit_reservation_allocations",
         "credit_ledger_entries",
+        "credit_packages",
+        "billing_orders",
+        "payment_intents",
+        "payment_provider_events",
+        "payment_risk_events",
+        "payment_reconciliation_runs",
+        "payment_reconciliation_items",
         "storage_objects",
       ]) {
         assert.ok(tables.includes(table), `expected ${table} table`);

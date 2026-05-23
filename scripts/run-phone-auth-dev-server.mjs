@@ -1,9 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 
 const runtime = findNodeRuntime(18);
-const serverEntrypoint = join(process.cwd(), "apps", "backend", "src", "entrypoints", "phone-auth-dev-server.ts");
+const serverEntrypoint = join(
+  process.cwd(),
+  "apps",
+  "backend",
+  "src",
+  "entrypoints",
+  "phone-auth-dev-server.ts",
+);
 const envFilePath = join(process.cwd(), ".env");
 
 if (!existsSync(serverEntrypoint)) {
@@ -48,9 +55,9 @@ function findNodeRuntime(minMajor) {
 
   addCandidate(process.execPath);
 
-  const whereNode = spawnSync("where", ["node"], {
+  const nodeLocator = process.platform === "win32" ? "where.exe" : "which";
+  const whereNode = spawnSync(nodeLocator, ["node"], {
     encoding: "utf8",
-    shell: process.platform === "win32",
   });
 
   if (whereNode.status === 0) {
