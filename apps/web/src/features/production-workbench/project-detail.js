@@ -4,6 +4,7 @@ import { renderExportPanel } from "./export-panel.js";
 import { renderProjectCreateModal } from "./project-create-modal.js";
 import { getProjectDetailState } from "./storyboard-state.js";
 import { disabled, escapeHtml } from "./markup.js";
+import { renderLibraryTeam } from "../library-team/index.js";
 
 const PROJECT_STATUS_OPTIONS = ["未开始", "制作中", "一稿交付", "完结"];
 
@@ -1552,11 +1553,11 @@ function renderMainPanel({ state, ui, session, detailState, progress, activeNavT
   if (activeNavTab === "library") {
     return `
       ${renderWorkbenchHeader({ state, session, detailState, progress, ui })}
-      <section class="placeholder-panel">
-        <p class="section-kicker">资产库</p>
-        <h2>统一资产空间</h2>
-        <p>这里预留给后续的角色、场景、道具和风格参考图管理。当前版本继续通过项目资产卡和脚本提取推进主流程。</p>
-      </section>
+      ${renderLibraryTeam({
+        route: "assets",
+        assetScope: ui.libraryTeamAssetScope,
+        pricingOpen: Boolean(ui.isLibraryPricingModalOpen),
+      })}
       <p id="workspace-status" class="workbench-toast" role="status">${escapeHtml(ui.toast ?? "已连接到本地 creator API。")}</p>
     `;
   }
@@ -1576,11 +1577,11 @@ function renderMainPanel({ state, ui, session, detailState, progress, activeNavT
   if (activeNavTab === "team") {
     return `
       ${renderWorkbenchHeader({ state, session, detailState, progress, ui })}
-      <section class="placeholder-panel">
-        <p class="section-kicker">团队</p>
-        <h2>协作空间</h2>
-        <p>团队设置和成员权限会放在这里。当前页面先维持单人可用的创作工作台，不让左侧导航在切换时消失。</p>
-      </section>
+      ${renderLibraryTeam({
+        route: ui.libraryTeamRoute ?? "team",
+        pricingOpen: Boolean(ui.isLibraryPricingModalOpen),
+        rulesOpen: Boolean(ui.isMemberRulesModalOpen),
+      })}
       <p id="workspace-status" class="workbench-toast" role="status">${escapeHtml(ui.toast ?? "已连接到本地 creator API。")}</p>
     `;
   }
@@ -2002,8 +2003,9 @@ function renderProjectPagination({ currentPage, totalPages }) {
         data-page="${currentPage - 1}"
         ${disabled(currentPage <= 1)}
       >
-        涓婁竴椤?      </button>
-      <span class="pagination-status">绗?${currentPage} / ${totalPages} 椤?/span>
+        上一页
+      </button>
+      <span class="pagination-status">第 ${currentPage} / ${totalPages} 页</span>
       <button
         class="pagination-button"
         type="button"
@@ -2011,7 +2013,8 @@ function renderProjectPagination({ currentPage, totalPages }) {
         data-page="${currentPage + 1}"
         ${disabled(currentPage >= totalPages)}
       >
-        涓嬩竴椤?      </button>
+        下一页
+      </button>
     </nav>
   `;
 }

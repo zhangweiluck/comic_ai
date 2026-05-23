@@ -29,6 +29,13 @@ import {
   requestCreatorVideoGenerationPlatformBatch,
 } from "./creator-platform.service.ts";
 import {
+  createEpisodeForProject,
+  deleteEpisodeForProject,
+  listEpisodesForProject,
+  replaceEpisodesForProject,
+  updateEpisodeForProject,
+} from "./episode-record.service.ts";
+import {
   createExportRecord,
   listExportRecordsForProject,
 } from "./export-record.service.ts";
