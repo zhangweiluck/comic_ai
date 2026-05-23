@@ -2,6 +2,7 @@
 node_modules
 .idea/
 tmp-ui-screenshots/
+artifacts/worker-c-preview/
 *.log
 .env
 .env.local
