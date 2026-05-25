@@ -10,6 +10,14 @@
 
 ---
 
+## Split Execution Docs
+
+This master plan coordinates the three-person delivery. Day-to-day execution should happen from the owner-specific plans:
+
+- Developer A / Platform API: [2026-05-24-local-runnable-integration-developer-a-platform-api.md](./2026-05-24-local-runnable-integration-developer-a-platform-api.md)
+- Developer B / Frontend Integration: [2026-05-24-local-runnable-integration-developer-b-frontend-integration.md](./2026-05-24-local-runnable-integration-developer-b-frontend-integration.md)
+- Developer C / DX QA Ops: [2026-05-24-local-runnable-integration-developer-c-dx-qa-ops.md](./2026-05-24-local-runnable-integration-developer-c-dx-qa-ops.md)
+
 ## 0. 执行总则
 
 本计划的第一版完成标准是 **Local Runnable Alpha**，不是准生产部署，也不是商业 Beta。
